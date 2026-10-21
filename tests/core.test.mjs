@@ -95,6 +95,8 @@ test("web readiness requires only account credentials; mobile mode requires app 
     "QOBUZ_APP_ID",
     "QOBUZ_APP_SECRET",
     "QOBUZ_AUTH_MODE",
+    "QOBUZ_USER_ID",
+    "QOBUZ_AUTH_TOKEN",
   ];
   const saved = Object.fromEntries(
     names.map((name) => [name, process.env[name]]),
@@ -113,8 +115,25 @@ test("web readiness requires only account credentials; mobile mode requires app 
       "QOBUZ_APP_ID",
       "QOBUZ_APP_SECRET",
     ]);
+    process.env.QOBUZ_AUTH_MODE = "token";
+    delete process.env.QOBUZ_USERNAME;
+    delete process.env.QOBUZ_PASSWORD;
+    delete process.env.QOBUZ_USER_ID;
+    delete process.env.QOBUZ_AUTH_TOKEN;
+    assert.deepEqual(readiness(settings).missing, [
+      "QOBUZ_USER_ID",
+      "QOBUZ_AUTH_TOKEN",
+    ]);
+    process.env.QOBUZ_USER_ID = "12345";
+    process.env.QOBUZ_AUTH_TOKEN = "fixture-session-secret";
+    assert.deepEqual(readiness(settings).missing, []);
+    assert.ok(
+      !redact("token: fixture-session-secret").includes(
+        "fixture-session-secret",
+      ),
+    );
     process.env.QOBUZ_AUTH_MODE = "invalid";
-    assert.throws(authMode, /web или mobile/);
+    assert.throws(authMode, /web, token или mobile/);
   } finally {
     for (const [name, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[name];

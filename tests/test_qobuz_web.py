@@ -24,6 +24,7 @@ class WebLoginTest(unittest.TestCase):
         self.login_calls = 0
         self.mode = 'ok'
         self.env = patch.dict(os.environ, {
+            'QOBUZ_AUTH_MODE': 'web',
             'QOBUZ_USERNAME': 'fixture@example.test', 'QOBUZ_PASSWORD': 'fixture-password',
             'QOBUZ_APP_ID': '', 'QOBUZ_APP_SECRET': '',
         })
@@ -48,7 +49,7 @@ class WebLoginTest(unittest.TestCase):
         return result
 
     def request(self, session, method, url, **kwargs):
-        self.assertEqual(method.lower(), 'get')
+        self.assertEqual(method.lower(), 'post' if url.endswith('/user/login') else 'get')
         self.assertNotEqual(kwargs.get('verify'), False)
         if self.mode == 'network':
             raise requests.exceptions.ProxyError('private proxy details')
@@ -62,12 +63,22 @@ class WebLoginTest(unittest.TestCase):
                 chunks += [f'a.initialSeed("{value[:4]}",window.utimezone.{timezone})',
                            f'name:"Europe/{timezone.capitalize()}",info:"{value[4:12]}",extras:"{value[12:]}"']
             return self.response(url, ';'.join(chunks))
-        params = kwargs.get('params', {})
+        params = kwargs.get('data', {}) if url.endswith('/user/login') else kwargs.get('params', {})
         self.assertEqual(params.get('app_id', session.headers.get('X-App-Id')), '123456789')
         if url.endswith('/user/login'):
             self.login_calls += 1
-            self.assertEqual(params['email'], 'fixture@example.test')
-            self.assertEqual(params['password'], hashlib.md5(b'fixture-password').hexdigest())
+            self.assertEqual(kwargs.get('timeout'), 30)
+            self.assertNotIn('params', kwargs)
+            if os.environ['QOBUZ_AUTH_MODE'] == 'token':
+                self.assertEqual(params['user_id'], '12345')
+                self.assertEqual(params['user_auth_token'], 'fixture-browser-token')
+                self.assertEqual(session.headers.get('X-User-Auth-Token'), 'fixture-browser-token')
+                self.assertNotIn('email', params)
+                self.assertNotIn('password', params)
+            else:
+                self.assertEqual(params['email'], 'fixture@example.test')
+                self.assertEqual(params['password'], hashlib.md5(b'fixture-password').hexdigest())
+                self.assertNotIn('X-User-Auth-Token', session.headers)
             self.assertNotIn('extra', params)
             self.assertNotIn('request_sig', params)
             if self.mode == '401':
@@ -103,6 +114,22 @@ class WebLoginTest(unittest.TestCase):
             self.api.login('fixture@example.test', 'fixture-password')
         self.assertIn('401', str(error.exception))
         self.assertNotIn('fixture-password', str(error.exception))
+        self.assertIn('не доказывает ошибку пароля', str(error.exception))
+
+    def test_browser_session_login_sends_token_unchanged_without_password(self):
+        with patch.dict(os.environ, {'QOBUZ_AUTH_MODE': 'token', 'QOBUZ_USER_ID': '12345',
+                                    'QOBUZ_AUTH_TOKEN': 'fixture-browser-token', 'QOBUZ_USERNAME': '', 'QOBUZ_PASSWORD': ''}):
+            self.assertEqual(self.api.get_album('fixture')['id'], 'fixture-metadata')
+            self.assertEqual(self.login_calls, 1)
+
+    def test_expired_browser_session_is_not_reported_as_invalid_password(self):
+        self.mode = '401'
+        with patch.dict(os.environ, {'QOBUZ_AUTH_MODE': 'token', 'QOBUZ_USER_ID': '12345',
+                                    'QOBUZ_AUTH_TOKEN': 'fixture-browser-token'}):
+            with self.assertRaises(QobuzWebError) as error:
+                self.api.get_album('fixture')
+            self.assertIn('Браузерная сессия могла истечь', str(error.exception))
+            self.assertNotIn('fixture-browser-token', str(error.exception))
 
     def test_subscription_is_required(self):
         self.mode = 'subscription'

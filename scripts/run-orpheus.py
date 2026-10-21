@@ -16,9 +16,9 @@ def main():
     os.chdir(root)
     sys.path.insert(0, str(root))
     auth_mode = os.environ.get('QOBUZ_AUTH_MODE', 'web')
-    if auth_mode not in {'web', 'mobile'}:
-        raise ValueError('QOBUZ_AUTH_MODE must be web or mobile')
-    if auth_mode == 'web':
+    if auth_mode not in {'web', 'mobile', 'token'}:
+        raise ValueError('QOBUZ_AUTH_MODE must be web, token or mobile')
+    if auth_mode in {'web', 'token'}:
         from qobuz_web import install_web_api
         install_web_api()
     os.umask(0o077)
@@ -37,7 +37,12 @@ def main():
     settings['global']['advanced']['debug_mode'] = False
     for field in ('username', 'password', 'app_id', 'app_secret'):
         value = os.environ.get('QOBUZ_' + field.upper(), '')
-        if auth_mode == 'web' and field in {'app_id', 'app_secret'}:
+        if auth_mode == 'token' and field in {'username', 'password'}:
+            name = 'QOBUZ_USER_ID' if field == 'username' else 'QOBUZ_AUTH_TOKEN'
+            value = os.environ.get(name, '')
+            if not value:
+                raise ValueError('Missing ' + name)
+        elif auth_mode in {'web', 'token'} and field in {'app_id', 'app_secret'}:
             value = ''
         elif not value:
             raise ValueError('Missing QOBUZ_' + field.upper())

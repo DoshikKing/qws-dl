@@ -24,7 +24,7 @@ type Status = {
   missing: string[];
   ready: boolean;
   quality: string;
-  authMode: "web" | "mobile";
+  authMode: "web" | "mobile" | "token";
   retentionHours: number;
 };
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/?$/, "/");
@@ -41,8 +41,9 @@ const quality = ref("hifi");
 const retentionHours = ref(24);
 const status = ref<Status | null>(null);
 const credentialNames = computed(() => [
-  "QOBUZ_USERNAME",
-  "QOBUZ_PASSWORD",
+  ...(status.value?.authMode === "token"
+    ? ["QOBUZ_USER_ID", "QOBUZ_AUTH_TOKEN"]
+    : ["QOBUZ_USERNAME", "QOBUZ_PASSWORD"]),
   ...(status.value?.authMode === "mobile"
     ? ["QOBUZ_APP_ID", "QOBUZ_APP_SECRET"]
     : []),
@@ -576,7 +577,9 @@ onBeforeUnmount(() => clearInterval(timer));
             <strong>{{
               status?.authMode === "mobile"
                 ? "Мобильный API"
-                : "Веб-вход · параметры автоматически"
+                : status?.authMode === "token"
+                  ? "Браузерная сессия"
+                  : "Веб-вход · параметры автоматически"
             }}</strong>
           </div>
           <div v-for="name in credentialNames" :key="name" class="setting-row">

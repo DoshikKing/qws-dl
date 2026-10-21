@@ -14,8 +14,14 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 
-for (const prefix of ["/", "/dl/", "/dl", "/music/dl/"]) {
-  test(`production HTTP (${prefix}): login → queue → Python runner → files, failure, cancellation and restart`, async () => {
+for (const [prefix, mode] of [
+  ["/", "web"],
+  ["/dl/", "web"],
+  ["/dl", "web"],
+  ["/music/dl/", "web"],
+  ["/dl/", "token"],
+]) {
+  test(`production HTTP (${prefix}, ${mode}): login → queue → Python runner → files, failure, cancellation and restart`, async () => {
     // This fixture exercises our bridge and queue without pretending to authenticate with live Qobuz.
     const base = await mkdtemp(join(tmpdir(), "qws-http-"));
     const root = join(base, "orpheus");
@@ -58,9 +64,11 @@ for (const prefix of ["/", "/dl/", "/dl", "/music/dl/"]) {
           HOST: "127.0.0.1",
           PORT: String(port),
           WEB_PASSWORD: "test-interface-password",
-          QOBUZ_USERNAME: "test-account",
-          QOBUZ_PASSWORD: "test-account-secret",
-          QOBUZ_AUTH_MODE: "web",
+          QOBUZ_USERNAME: mode === "web" ? "test-account" : "",
+          QOBUZ_PASSWORD: mode === "web" ? "test-account-secret" : "",
+          QOBUZ_AUTH_MODE: mode,
+          QOBUZ_USER_ID: mode === "token" ? "12345" : "",
+          QOBUZ_AUTH_TOKEN: mode === "token" ? "test-session-secret" : "",
           QOBUZ_APP_ID: "",
           QOBUZ_APP_SECRET: "",
           ORPHEUS_DIR: root,
@@ -114,7 +122,7 @@ if sys.argv[-1].endswith('/2'):
 elif sys.argv[-1].endswith('/3'):
     time.sleep(60)
 else:
-    print(os.environ['QOBUZ_PASSWORD'])
+    print(os.environ.get('QOBUZ_AUTH_TOKEN') or os.environ['QOBUZ_PASSWORD'])
     Path(os.environ['DOWNLOAD_DIR'], 'example.flac').write_bytes(b'fixture-audio')
 `,
       );
@@ -160,6 +168,18 @@ else:
       );
       assert.equal(finished.hasFiles, true);
       assert.ok(!finished.log.includes("test-account-secret"));
+      assert.ok(!finished.log.includes("test-session-secret"));
+      const settings = JSON.parse(
+        await readFile(join(root, "config/settings.json"), "utf8"),
+      );
+      assert.equal(
+        settings.modules.qobuz.username,
+        mode === "token" ? "12345" : "test-account",
+      );
+      assert.equal(
+        settings.modules.qobuz.password,
+        mode === "token" ? "test-session-secret" : "test-account-secret",
+      );
       const library = await (await api("/api/files")).json();
       assert.equal(library.files.length, 1);
       const file = await api(

@@ -35,19 +35,20 @@ Relative local paths are resolved from the project root. Compose overrides stora
 with container paths. Nuxt dev reads `.env`; `npm start` loads it using Node.js.
 When running `.output/server/index.mjs` directly, supply the environment yourself.
 
-| Variable                           | Meaning                                                                   |
-| ---------------------------------- | ------------------------------------------------------------------------- |
-| `WEB_PASSWORD`                     | Required web-interface password; without it the application API is closed |
-| `QOBUZ_USERNAME`, `QOBUZ_PASSWORD` | Your Qobuz email and original account password                            |
-| `QOBUZ_AUTH_MODE`                  | `web` by default; `mobile` enables the legacy API integration             |
-| `QOBUZ_APP_ID`, `QOBUZ_APP_SECRET` | Only required in `mobile` mode; ignored in `web` mode                     |
-| `DOWNLOAD_QUALITY`                 | `hifi`, `lossless`, or `high`; defaults to `hifi`                         |
-| `DOWNLOAD_RETENTION_HOURS`         | Default lifetime after a job finishes: integer hours, 1–24; default 24    |
-| `ORPHEUS_DIR`, `PYTHON_BIN`        | Installed OrpheusDL checkout and its virtual-environment Python           |
-| `DATA_DIR`, `DOWNLOAD_DIR`         | Queue history and downloaded files                                        |
-| `JOB_TIMEOUT_SECONDS`              | Maximum runtime per download job; default 7200 seconds                    |
-| `WEB_BIND`, `WEB_PORT`             | Compose host binding and port; defaults `127.0.0.1` and `3000`            |
-| `NUXT_APP_BASE_URL`                | Application path prefix; defaults to `/`, e.g. `/dl/`                     |
+| Variable                            | Meaning                                                                                            |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `WEB_PASSWORD`                      | Required web-interface password; without it the application API is closed                          |
+| `QOBUZ_USERNAME`, `QOBUZ_PASSWORD`  | Your Qobuz email and original account password                                                     |
+| `QOBUZ_AUTH_MODE`                   | `web` by default; `token` reuses your browser session; `mobile` enables the legacy API integration |
+| `QOBUZ_USER_ID`, `QOBUZ_AUTH_TOKEN` | Your own browser account ID and auth token; only for `token` mode                                  |
+| `QOBUZ_APP_ID`, `QOBUZ_APP_SECRET`  | Only required in `mobile` mode; ignored in `web` mode                                              |
+| `DOWNLOAD_QUALITY`                  | `hifi`, `lossless`, or `high`; defaults to `hifi`                                                  |
+| `DOWNLOAD_RETENTION_HOURS`          | Default lifetime after a job finishes: integer hours, 1–24; default 24                             |
+| `ORPHEUS_DIR`, `PYTHON_BIN`         | Installed OrpheusDL checkout and its virtual-environment Python                                    |
+| `DATA_DIR`, `DOWNLOAD_DIR`          | Queue history and downloaded files                                                                 |
+| `JOB_TIMEOUT_SECONDS`               | Maximum runtime per download job; default 7200 seconds                                             |
+| `WEB_BIND`, `WEB_PORT`              | Compose host binding and port; defaults `127.0.0.1` and `3000`                                     |
+| `NUXT_APP_BASE_URL`                 | Application path prefix; defaults to `/`, e.g. `/dl/`                                              |
 
 Qobuz quality targets: `hifi` up to FLAC 192 kHz / 24-bit, `lossless` FLAC 44.1 kHz / 16-bit,
 and `high` MP3 320 kbit/s. Actual availability depends on Qobuz, the release, and your account.
@@ -72,8 +73,35 @@ Legacy mode remains available with `QOBUZ_AUTH_MODE=mobile` and your matching mo
 The server needs HTTPS access to `play.qobuz.com` for discovery, `www.qobuz.com` for API calls,
 and the media/cover destinations returned by Qobuz.
 Web-player changes may require an integration update.
-Errors distinguish rejected credentials (401), an ineligible subscription, networking and player parsing.
+Errors distinguish rejected authentication (401), an ineligible subscription, networking and player parsing.
+A 401 alone does not establish an incorrect password. The login request uses a POST form;
+credentials and session tokens are not placed in its URL.
 A “Configured” UI status checks required settings and installed files; it does not prove successful login.
+
+## When browser login works but password authentication returns 401
+
+First update the application: the web adapter now sends a POST form instead of qobuz-dl's legacy GET login.
+If Qobuz still rejects password authentication, you can explicitly reuse **your own** browser session:
+
+```dotenv
+QOBUZ_AUTH_MODE=token
+QOBUZ_USER_ID=your-account-id
+QOBUZ_AUTH_TOKEN='your-own-browser-session-token'
+```
+
+1. Sign in to `play.qobuz.com` with your own account.
+2. Open browser developer tools → Network → Fetch/XHR, then reload the page.
+3. Find the Qobuz `user/login` or `user/get` request. In its response, look for your account's
+   `user.id` (or `id` for `user/get`) and `user_auth_token`. The token may also be in the
+   `X-User-Auth-Token` request header.
+4. Put those values in your private `.env`, then run `docker compose up -d --build`
+   after updating the code. Subsequent token-only updates need `docker compose up -d --force-recreate`.
+
+In token mode, email/password and manual app keys are not required; web-client parameters
+are still discovered automatically. A valid eligible account is still required.
+Tokens are credentials: do not share them in chat, screenshots, HAR exports, logs or commits.
+The worker stores its private Orpheus configuration with restrictive permissions.
+If the session expires, renew it from your browser; the application does not acquire someone else's session.
 
 ## ZIP downloads and automatic expiry
 
@@ -183,3 +211,14 @@ own licenses. FFmpeg's applicable terms depend on the distributed build.
 See each upstream distribution for full license/copyright notices.
 Pinned JavaScript dependencies are recorded in `package-lock.json`;
 Python dependencies are recorded in `requirements-orpheus.lock`.
+
+### Check password propagation without displaying it
+
+If a fresh browser login succeeds, this local check compares the typed password with the
+container environment. Input is hidden; only the comparison result is printed:
+
+```sh
+docker compose exec qws-dl /opt/runtime/venv/bin/python -c 'import getpass,hmac,os; p=getpass.getpass("Qobuz password: "); v=os.environ.get("QOBUZ_PASSWORD", ""); print("MATCH" if v and hmac.compare_digest(p.encode(),v.encode()) else "DIFFERENT")'
+```
+
+If it prints `DIFFERENT`, check `.env` quoting and recreate the container. This check does not apply to token mode.

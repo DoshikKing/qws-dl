@@ -14,11 +14,12 @@ import { resolve, join } from "node:path";
 export const qualities = ["hifi", "lossless", "high"];
 export const requiredCredentials = ["QOBUZ_USERNAME", "QOBUZ_PASSWORD"];
 const mobileCredentials = ["QOBUZ_APP_ID", "QOBUZ_APP_SECRET"];
+const tokenCredentials = ["QOBUZ_USER_ID", "QOBUZ_AUTH_TOKEN"];
 
 export function authMode() {
   const mode = process.env.QOBUZ_AUTH_MODE || "web";
-  if (!["web", "mobile"].includes(mode))
-    throw new Error("QOBUZ_AUTH_MODE: выберите web или mobile.");
+  if (!["web", "mobile", "token"].includes(mode))
+    throw new Error("QOBUZ_AUTH_MODE: выберите web, token или mobile.");
   return mode;
 }
 
@@ -87,7 +88,7 @@ export function config() {
 export function readiness(settings = config()) {
   const mode = settings.authMode || authMode();
   const required = [
-    ...requiredCredentials,
+    ...(mode === "token" ? tokenCredentials : requiredCredentials),
     ...(mode === "mobile" ? mobileCredentials : []),
   ];
   const missing = required.filter((name) => !process.env[name]);
@@ -110,6 +111,7 @@ export function redact(text) {
   for (const name of [
     ...requiredCredentials,
     ...mobileCredentials,
+    ...tokenCredentials,
     "WEB_PASSWORD",
   ]) {
     const value = process.env[name];
