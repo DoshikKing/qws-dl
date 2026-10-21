@@ -6,16 +6,21 @@ import {
   readFileSync,
   writeFileSync,
   renameSync,
+  readdirSync,
+  rmSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
 
 export const qualities = ["hifi", "lossless", "high"];
-export const requiredCredentials = [
-  "QOBUZ_USERNAME",
-  "QOBUZ_PASSWORD",
-  "QOBUZ_APP_ID",
-  "QOBUZ_APP_SECRET",
-];
+export const requiredCredentials = ["QOBUZ_USERNAME", "QOBUZ_PASSWORD"];
+const mobileCredentials = ["QOBUZ_APP_ID", "QOBUZ_APP_SECRET"];
+
+export function authMode() {
+  const mode = process.env.QOBUZ_AUTH_MODE || "web";
+  if (!["web", "mobile"].includes(mode))
+    throw new Error("QOBUZ_AUTH_MODE: выберите web или mobile.");
+  return mode;
+}
 
 export function normalizeUrl(value) {
   if (typeof value !== "string" || value.length > 2048)
@@ -55,6 +60,15 @@ export function config() {
   if (!qualities.includes(quality))
     throw new Error("DOWNLOAD_QUALITY: выберите hifi, lossless или high.");
   const timeout = Number(process.env.JOB_TIMEOUT_SECONDS || 7200);
+  const retentionHours = Number(process.env.DOWNLOAD_RETENTION_HOURS || 24);
+  if (
+    !Number.isInteger(retentionHours) ||
+    retentionHours < 1 ||
+    retentionHours > 24
+  )
+    throw new Error(
+      "DOWNLOAD_RETENTION_HOURS: выберите целое число от 1 до 24.",
+    );
   if (!Number.isFinite(timeout) || timeout < 1 || timeout > 604800)
     throw new Error("JOB_TIMEOUT_SECONDS: допустимо 1–604800.");
   return {
@@ -65,11 +79,18 @@ export function config() {
     runner: resolve("scripts/run-orpheus.py"),
     quality,
     timeout,
+    authMode: authMode(),
+    retentionHours,
   };
 }
 
 export function readiness(settings = config()) {
-  const missing = requiredCredentials.filter((name) => !process.env[name]);
+  const mode = settings.authMode || authMode();
+  const required = [
+    ...requiredCredentials,
+    ...(mode === "mobile" ? mobileCredentials : []),
+  ];
+  const missing = required.filter((name) => !process.env[name]);
   const installed =
     existsSync(join(settings.root, "orpheus.py")) &&
     existsSync(join(settings.root, "modules/qobuz/interface.py")) &&
@@ -79,12 +100,18 @@ export function readiness(settings = config()) {
     missing,
     ready: installed && missing.length === 0,
     quality: settings.quality,
+    authMode: mode,
+    retentionHours: settings.retentionHours || 24,
   };
 }
 
 export function redact(text) {
   let clean = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
-  for (const name of [...requiredCredentials, "WEB_PASSWORD"]) {
+  for (const name of [
+    ...requiredCredentials,
+    ...mobileCredentials,
+    "WEB_PASSWORD",
+  ]) {
     const value = process.env[name];
     if (value) clean = clean.split(value).join("[REDACTED]");
   }
@@ -113,10 +140,25 @@ export class DownloadQueue {
           "Сервер перезапущен во время загрузки. Добавьте ссылку повторно.";
         job.finishedAt = new Date().toISOString();
       }
+      job.retentionHours = Math.min(
+        24,
+        Math.max(1, Number(job.retentionHours) || 24),
+      );
+      if (!["running", "queued"].includes(job.status)) {
+        job.expiresAt ||= new Date(
+          Date.parse(
+            job.finishedAt || job.createdAt || new Date().toISOString(),
+          ) +
+            job.retentionHours * 3600_000,
+        ).toISOString();
+        job.hasFiles = !job.expiredAt && this.hasFiles(job);
+      }
     }
     this.save();
     this.active = null;
     this.stopping = false;
+    this.cleanupExpired();
+    this.scheduleCleanup();
     // ponytail: one worker per Node process; run one replica to protect Orpheus session storage.
     queueMicrotask(() => this.pump());
   }
@@ -128,9 +170,15 @@ export class DownloadQueue {
     renameSync(this.file + ".tmp", this.file);
   }
 
-  add(url, quality) {
+  add(url, quality, retentionHours = this.settings.retentionHours || 24) {
     url = normalizeUrl(url);
     if (!qualities.includes(quality)) throw new Error("Неизвестное качество.");
+    if (
+      !Number.isInteger(retentionHours) ||
+      retentionHours < 1 ||
+      retentionHours > 24
+    )
+      throw new Error("Срок хранения: целое число от 1 до 24 часов.");
     if (
       this.jobs.filter((job) => ["queued", "running"].includes(job.status))
         .length >= 50
@@ -144,10 +192,14 @@ export class DownloadQueue {
       createdAt: new Date().toISOString(),
       log: "",
       error: null,
+      retentionHours,
+      expiresAt: null,
+      expiredAt: null,
+      hasFiles: false,
     };
     this.jobs.unshift(job);
-    // Bound the JSON history; downloaded files are retained independently.
-    this.jobs = this.jobs.slice(0, 200);
+    // Keep unexpired jobs so their file expiry remains tracked beyond the history limit.
+    this.pruneHistory();
     this.save();
     this.pump();
     return job;
@@ -159,8 +211,12 @@ export class DownloadQueue {
     if (!["queued", "running"].includes(job.status)) return true;
     job.status = "cancelled";
     job.finishedAt = new Date().toISOString();
+    job.expiresAt = new Date(
+      Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
+    ).toISOString();
     this.save();
     if (this.active?.job.id === id) this.kill();
+    this.scheduleCleanup();
     return true;
   }
 
@@ -196,7 +252,11 @@ export class DownloadQueue {
         ? "Установите OrpheusDL: npm run setup:orpheus"
         : "Заполните в .env: " + ready.missing.join(", ");
       job.finishedAt = new Date().toISOString();
+      job.expiresAt = new Date(
+        Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
+      ).toISOString();
       this.save();
+      this.scheduleCleanup();
       queueMicrotask(() => this.pump());
       return;
     }
@@ -249,20 +309,129 @@ export class DownloadQueue {
       clearTimeout(timer);
       if (job.status !== "cancelled") {
         job.status = code === 0 && !job.error ? "completed" : "failed";
+        if (code === 3 && !job.error)
+          job.error =
+            job.log
+              .split("\n")
+              .findLast((line) => line.startsWith("Qobuz: ")) ||
+            "Не удалось войти в Qobuz. Подробности в журнале.";
         if (job.status === "failed" && !job.error)
           job.error =
             "OrpheusDL сообщил об ошибке. Подробности в журнале; часть файлов могла сохраниться.";
       }
       job.finishedAt = new Date().toISOString();
+      job.expiresAt = new Date(
+        Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
+      ).toISOString();
+      job.hasFiles = this.hasFiles(job);
       this.active = null;
       this.save();
+      this.scheduleCleanup();
       this.pump();
     });
   }
 
   close() {
     this.stopping = true;
+    clearTimeout(this.cleanupTimer);
     this.kill();
+  }
+
+  folder(job) {
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        job.id,
+      )
+    )
+      throw new Error("Invalid job directory");
+    return join(this.settings.downloads, job.id);
+  }
+
+  hasFiles(job) {
+    try {
+      const walk = (folder) =>
+        readdirSync(folder, { withFileTypes: true }).some(
+          (entry) =>
+            !entry.name.startsWith(".qws-") &&
+            (entry.isFile() ||
+              (entry.isDirectory() && walk(join(folder, entry.name)))),
+        );
+      return walk(this.folder(job));
+    } catch {
+      return false;
+    }
+  }
+
+  expired(job, now = Date.now()) {
+    return Boolean(
+      job.expiredAt || (job.expiresAt && Date.parse(job.expiresAt) <= now),
+    );
+  }
+
+  pathExpired(path) {
+    const id = path.split(/[\\/]/)[0];
+    const job = this.jobs.find((item) => item.id === id);
+    return Boolean(job && this.expired(job));
+  }
+
+  pruneHistory() {
+    this.jobs = this.jobs.filter(
+      (job, index) =>
+        index < 200 ||
+        ["running", "queued"].includes(job.status) ||
+        !job.expiredAt,
+    );
+  }
+
+  cleanupExpired(now = Date.now()) {
+    let changed = false;
+    for (const job of this.jobs) {
+      if (
+        job.expiredAt ||
+        !this.expired(job, now) ||
+        ["running", "queued"].includes(job.status)
+      )
+        continue;
+      try {
+        // Remove only this job's generated UUID directory, never settings or a whole downloads root.
+        rmSync(this.folder(job), { recursive: true, force: true });
+        job.expiredAt = new Date(now).toISOString();
+        job.hasFiles = false;
+        delete job.cleanupError;
+      } catch {
+        job.cleanupError =
+          "Не удалось удалить файлы. Проверьте права на каталог downloads.";
+      }
+      changed = true;
+    }
+    if (changed) {
+      this.pruneHistory();
+      this.save();
+    }
+  }
+
+  scheduleCleanup() {
+    clearTimeout(this.cleanupTimer);
+    if (this.stopping) return;
+    const times = this.jobs
+      .filter(
+        (job) =>
+          job.expiresAt &&
+          !job.expiredAt &&
+          !["running", "queued"].includes(job.status),
+      )
+      .map((job) =>
+        job.cleanupError ? Date.now() + 60_000 : Date.parse(job.expiresAt),
+      );
+    const delay = Math.max(
+      1,
+      Math.min(3600_000, ...times.map((time) => time - Date.now())),
+    );
+    this.cleanupTimer = setTimeout(() => {
+      this.cleanupExpired();
+      this.scheduleCleanup();
+    }, delay);
+    this.cleanupTimer.unref();
   }
 }
 

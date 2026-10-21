@@ -22,7 +22,13 @@ export async function listFiles(root) {
           entry.name,
         )
       ) {
-        const info = await stat(path);
+        let info;
+        try {
+          info = await stat(path);
+        } catch (error) {
+          if (error.code === "ENOENT") continue;
+          throw error;
+        }
         files.push({
           path: relative(root, path).split(sep).join("/"),
           name: entry.name,

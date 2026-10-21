@@ -7,10 +7,17 @@ import {
   symlink,
   rm,
   chmod,
+  access,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { normalizeUrl, redact, DownloadQueue } from "../server/utils/queue.mjs";
+import {
+  normalizeUrl,
+  redact,
+  DownloadQueue,
+  readiness,
+  authMode,
+} from "../server/utils/queue.mjs";
 import {
   passwordMatches,
   sessionToken,
@@ -78,6 +85,41 @@ test("redacts credentials and signed URLs from process logs", () => {
   } finally {
     if (old === undefined) delete process.env.QOBUZ_PASSWORD;
     else process.env.QOBUZ_PASSWORD = old;
+  }
+});
+
+test("web readiness requires only account credentials; mobile mode requires app keys", async () => {
+  const names = [
+    "QOBUZ_USERNAME",
+    "QOBUZ_PASSWORD",
+    "QOBUZ_APP_ID",
+    "QOBUZ_APP_SECRET",
+    "QOBUZ_AUTH_MODE",
+  ];
+  const saved = Object.fromEntries(
+    names.map((name) => [name, process.env[name]]),
+  );
+  try {
+    process.env.QOBUZ_USERNAME = "fixture";
+    process.env.QOBUZ_PASSWORD = "fixture";
+    delete process.env.QOBUZ_APP_ID;
+    delete process.env.QOBUZ_APP_SECRET;
+    delete process.env.QOBUZ_AUTH_MODE;
+    const settings = { root: "/missing", python: "/missing", quality: "hifi" };
+    assert.deepEqual(readiness(settings).missing, []);
+    assert.equal(readiness(settings).authMode, "web");
+    process.env.QOBUZ_AUTH_MODE = "mobile";
+    assert.deepEqual(readiness(settings).missing, [
+      "QOBUZ_APP_ID",
+      "QOBUZ_APP_SECRET",
+    ]);
+    process.env.QOBUZ_AUTH_MODE = "invalid";
+    assert.throws(authMode, /web или mobile/);
+  } finally {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   }
 });
 
@@ -208,6 +250,81 @@ test("worker serializes processes, handles failures and cancels a running job", 
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test("retention is limited to 24 hours and expiration removes only the job's files and ZIP", async () => {
+  const base = await mkdtemp(join(tmpdir(), "qws-expiry-"));
+  let queue;
+  try {
+    const downloads = join(base, "downloads");
+    queue = new DownloadQueue({
+      data: join(base, "data"),
+      downloads,
+      retentionHours: 24,
+    });
+    queue.stopping = true;
+    for (const hours of [0, 25, 1.5, "2", NaN])
+      assert.throws(() =>
+        queue.add("https://open.qobuz.com/track/1", "hifi", hours),
+      );
+    const expired = queue.add("https://open.qobuz.com/track/1", "hifi", 1);
+    const active = queue.add("https://open.qobuz.com/track/2", "hifi", 24);
+    expired.status = "completed";
+    expired.expiresAt = new Date(Date.now() - 1000).toISOString();
+    active.status = "running";
+    active.expiresAt = expired.expiresAt;
+    await mkdir(queue.folder(expired));
+    await mkdir(queue.folder(active));
+    await writeFile(join(queue.folder(expired), "song.flac"), "audio");
+    await writeFile(join(queue.folder(expired), ".qws-archive.zip"), "zip");
+    await writeFile(join(queue.folder(active), "keep.flac"), "active");
+    await writeFile(join(base, "data/keep"), "settings");
+    const outside = {
+      id: "../data",
+      status: "completed",
+      expiresAt: expired.expiresAt,
+    };
+    queue.jobs.push(outside);
+    queue.cleanupExpired();
+    await assert.rejects(access(queue.folder(expired)));
+    await access(join(queue.folder(active), "keep.flac"));
+    await access(join(base, "data/keep"));
+    assert.ok(expired.expiredAt);
+    assert.equal(expired.hasFiles, false);
+    assert.ok(queue.jobs.some((job) => job.id === expired.id));
+    assert.ok(outside.cleanupError);
+    assert.ok(queue.pathExpired(expired.id + "/song.flac"));
+  } finally {
+    queue?.close();
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test("expiry timer deletes files without HTTP activity", async () => {
+  const base = await mkdtemp(join(tmpdir(), "qws-expiry-timer-"));
+  let queue;
+  try {
+    queue = new DownloadQueue({
+      data: join(base, "data"),
+      downloads: join(base, "downloads"),
+    });
+    queue.stopping = true;
+    const job = queue.add("https://open.qobuz.com/track/1", "high", 1);
+    await mkdir(queue.folder(job));
+    await writeFile(join(queue.folder(job), "song.mp3"), "audio");
+    job.status = "completed";
+    job.expiresAt = new Date(Date.now() + 50).toISOString();
+    queue.stopping = false;
+    queue.scheduleCleanup();
+    const end = Date.now() + 2000;
+    while (!job.expiredAt && Date.now() < end)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(job.expiredAt);
+    await assert.rejects(access(queue.folder(job)));
+  } finally {
+    queue?.close();
     await rm(base, { recursive: true, force: true });
   }
 });

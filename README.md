@@ -1,130 +1,46 @@
 # QWS · OrpheusDL Web
 
-Русскоязычный веб-интерфейс на Nuxt 4 для OrpheusDL с установленным модулем Qobuz.
-Ссылки на треки, альбомы, плейлисты и исполнителей → очередь → файлы на сервере.
-Есть выбор качества, журнал, отмена заданий, библиотека с поиском и скачиванием файлов.
+[Русская версия](README.ru.md) · [Setup and configuration](INFO.md)
 
-## Docker Compose
+A Nuxt web interface for OrpheusDL and its Qobuz module. Queue media links,
+choose audio quality, view logs, cancel jobs, and download individual files or a ZIP.
+Choose a file lifetime of **1–24 hours** per job; files and archives expire together.
+
+## Disclaimer
+
+QWS is an **unofficial web UI and process runner for third-party software**.
+It does not independently provide access to downloading tracks from Qobuz,
+grant service entitlements, supply accounts or subscriptions, or bypass access restrictions.
+Authentication and media processing depend on OrpheusDL, its modules, and the libraries below.
+Use your own eligible account and download only content you are authorized to access.
+This project is not affiliated with or endorsed by Qobuz or the upstream projects.
+
+## Quick start
 
 ```sh
 cp .env.example .env
-# Заполните WEB_PASSWORD и четыре переменные QOBUZ_* в .env.
+# Set WEB_PASSWORD, QOBUZ_USERNAME and QOBUZ_PASSWORD.
 docker compose up -d --build
-docker compose logs -f
 ```
 
-Откройте `http://localhost:3000` и войдите с паролем `WEB_PASSWORD`.
-OrpheusDL и Qobuz устанавливаются автоматически при сборке образа; вручную клонировать их не нужно.
-Контейнер работает от непривилегированного пользователя. Внутри — Python, FFmpeg и Node.js.
+Open port `3000` on the local host and sign in with `WEB_PASSWORD`.
+Web authentication is the default: manual `app_id` / `app_secret` values are unnecessary.
+For a reverse proxy under `/dl/`, set `NUXT_APP_BASE_URL=/dl/` and use
+[the nginx location snippet](deploy/nginx-dl.conf).
 
-Для сети с собственным доверенным CA поддерживается BuildKit secret:
-`docker build --secret id=build_ca,src=/path/to/organization-ca.pem -t qws-dl .`.
-CA добавляется в хранилище доверия; проверки TLS и подписей пакетов остаются включёнными.
+See **[INFO.md](INFO.md)** for all environment variables, deployment, storage and expiry,
+local development, tests, troubleshooting, and known limitations.
 
-Файлы сохраняются в том `downloads`, история и сессия Qobuz — в `app-data`.
-`docker compose down` сохраняет тома; **`docker compose down -v` удаляет коллекцию и настройки**.
-Чтобы скопировать коллекцию: `docker compose cp qws-dl:/downloads ./saved-downloads`.
-После изменения `.env`: `docker compose up -d --force-recreate`.
-По умолчанию порт доступен только на localhost. Для удалённого доступа настройте TLS reverse proxy;
-`WEB_BIND` определяет адрес привязки, `WEB_PORT` — порт на хосте. Не запускайте несколько реплик на общих томах.
+## Third-party dependency notices
 
-## Локальная разработка
+| Component                                                                                        | Role                                             |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| [OrpheusDL](https://github.com/OrfiTeam/OrpheusDL)                                               | Download orchestration, media files and tagging  |
+| [OrpheusDL Qobuz module](https://github.com/yarrm80s/orpheusdl-qobuz)                            | Qobuz media and metadata integration             |
+| [qobuz-dl](https://github.com/vitiko98/qobuz-dl)                                                 | Web-client discovery and authentication; GPL-3.0 |
+| [Nuxt](https://nuxt.com/) / [Vue](https://vuejs.org/)                                            | Web UI and server; MIT                           |
+| [Node.js](https://nodejs.org/), [Python](https://www.python.org/), [FFmpeg](https://ffmpeg.org/) | Runtime and media tools                          |
 
-### Подпуть nginx `/dl/`
-
-Блоки `location` для существующего `server {}` находятся в [deploy/nginx-dl.conf](deploy/nginx-dl.conf).
-Добавьте `NUXT_APP_BASE_URL=/dl/` в `.env` и пересоберите приложение после обновления кода:
-`docker compose up -d --build`. Конфиг предполагает nginx на хосте и приложение на `127.0.0.1:3000`.
-В `proxy_pass` нет завершающего `/`: приложение должно получать полный путь `/dl/...`.
-Если nginx работает в общей Docker-сети, замените upstream на `http://qws-dl:3000`.
-Проверьте конфигурацию командой `nginx -t`, затем перезагрузите nginx.
-Префикс применяется также к API, ресурсам, ссылкам и cookie; `/api/health` становится `/dl/api/health`.
-Поддерживаются `/`, `/dl`, `/dl/` и вложенные пути вроде `/music/dl/`.
-`NUXT_APP_BASE_URL` — путь внутри сайта, например `/dl/`, а не полный адрес с доменом.
-После первого обновления кода изменение только этого параметра не требует пересборки:
-`docker compose up -d --force-recreate`. При запуске без Docker перезапустите `npm start` или `npm run dev`.
-
-### Запуск без Docker
-
-Нужны Node.js 22.12+ (или 24), Python 3.10+ с `venv`, Git и FFmpeg в `PATH`.
-На Debian/Ubuntu: `apt-get install python3 python3-venv git ffmpeg`.
-
-```sh
-npm ci
-npm run setup:orpheus
-cp .env.example .env
-# Заполните .env.
-npm run dev
-```
-
-Nuxt читает `.env` в режиме разработки. Production:
-
-```sh
-npm run build
-npm start
-```
-
-`npm start` загружает `.env` средствами Node.js. При прямом вызове `.output/server/index.mjs`
-переменные должен передать процесс запуска. В Compose их передаёт `env_file`.
-`npm run setup:orpheus` можно запускать повторно; изменённые отслеживаемые файлы upstream он не перезаписывает.
-Python-зависимости закреплены в `requirements-orpheus.lock`, JavaScript-зависимости — в `package-lock.json`.
-
-## Настройки `.env`
-
-| Переменная                         | Назначение                                                                     |
-| ---------------------------------- | ------------------------------------------------------------------------------ |
-| `WEB_PASSWORD`                     | Обязательный длинный пароль веб-интерфейса; без него API закрыт                |
-| `QOBUZ_USERNAME`, `QOBUZ_PASSWORD` | Учётная запись Qobuz с доступом к загрузкам                                    |
-| `QOBUZ_APP_ID`, `QOBUZ_APP_SECRET` | Действительные параметры приложения для модуля Qobuz                           |
-| `DOWNLOAD_QUALITY`                 | `hifi` (до 192 кГц / 24 бит), `lossless` (44,1 кГц / 16 бит), `high` (MP3 320) |
-| `ORPHEUS_DIR`, `PYTHON_BIN`        | Путь к установленному OrpheusDL и Python его виртуального окружения            |
-| `DATA_DIR`, `DOWNLOAD_DIR`         | Каталоги истории и загруженных файлов                                          |
-| `JOB_TIMEOUT_SECONDS`              | Лимит времени одного задания, по умолчанию 7200 секунд                         |
-| `WEB_BIND`, `WEB_PORT`             | Только Compose: адрес и порт на хосте                                          |
-| `NUXT_APP_BASE_URL`                | Базовый путь приложения: `/` по умолчанию, например `/dl/`                     |
-
-Относительные локальные пути считаются от корня проекта. В Compose пути переопределены на контейнерные.
-Секреты не передаются в браузер и не включаются в Docker-образ. При загрузке Python записывает их в
-конфигурацию OrpheusDL с правами 600; том `app-data` и локальный `.runtime` содержат приватные данные.
-Журналы ограничены по размеру, URL и значения секретов скрываются. Не публикуйте `.env` и тома.
-Статус «Настроено» проверяет наличие параметров, а не успешную авторизацию в Qobuz.
-Приложение не извлекает app-секреты; укажите свои действительные значения.
-Используйте сервис для контента, к которому у вас есть разрешённый доступ.
-
-## Очередь и ограничения
-
-Один Python-процесс обслуживает очередь по порядку, чтобы не повредить сессию OrpheusDL.
-Отмена останавливает группу процессов; уже сохранённые файлы остаются в библиотеке.
-После перезапуска ожидающие задания продолжаются, прерванное задание получает статус ошибки:
-при необходимости добавьте его ссылку заново. История хранит последние 200 заданий, очередь — до 50 активных.
-Каждое задание пишет в собственный каталог. Библиотека показывает до 1000 файлов; полная коллекция остаётся на диске.
-Успешное задание означает завершение CLI без ошибок, обнаруженных в выводе;
-OrpheusDL управляет метаданными, доступностью треков и выбором фактического качества.
-Отдельные ошибки треков считаются ошибкой задания, даже если upstream возвращает код 0.
-Поиска по каталогу нет: этот модуль объявляет режим загрузок, а не поиска в OrpheusDL.
-
-## Проверки
-
-```sh
-npm test
-npm run typecheck
-npm run build
-docker compose config --quiet
-```
-
-После сборки и установки Python-окружения: `npm run test:integration`.
-Этот тест запускает production-сервер и проверяет вход, очередь, Python-мост, выдачу файлов,
-ошибку отдельного трека, отмену и восстановление истории. Вместо сетевого Qobuz используется локальный стенд.
-
-На момент проверки `npm audit` сообщает 11 high в цепочках инструментов сборки (`braces`, `node-forge`).
-`npm audit fix` их не устраняет в текущих upstream-версиях. Эти пакеты отсутствуют в собранном
-production-сервере `.output`; для развёртывания используйте production-образ, а не dev-сервер.
-
-`/api/health` проверяет HTTP-сервер, не Qobuz. Проверка реальной загрузки:
-заполните учётные данные, добавьте доступный вашему аккаунту трек, дождитесь завершения,
-откройте библиотеку и скачайте файл. Без действительных данных Qobuz эту проверку выполнить нельзя.
-
-Upstream закреплены на коммитах в `scripts/install-orpheus.sh`:
-[OrpheusDL](https://github.com/OrfiTeam/OrpheusDL) и
-[OrpheusDL Qobuz](https://github.com/yarrm80s/orpheusdl-qobuz).
-Исходники upstream не включены в этот репозиторий, устанавливаются в `.runtime` или `/opt/runtime`.
+These components retain their own copyrights and licenses. This notice does not
+relicense upstream code. See [dependency and license details](INFO.md#dependencies-and-licenses)
+and the lockfiles for exact versions and transitive dependencies.

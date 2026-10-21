@@ -8,7 +8,11 @@ export default defineEventHandler(async (event) => {
     });
   const body = await readBody(event);
   try {
-    return getQueue().add(body?.url, body?.quality || ready.quality);
+    return getQueue().add(
+      body?.url,
+      body?.quality || ready.quality,
+      body?.retentionHours ?? ready.retentionHours,
+    );
   } catch (error) {
     throw createError({
       statusCode: 400,

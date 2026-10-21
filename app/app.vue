@@ -7,6 +7,11 @@ type Job = {
   createdAt: string;
   log: string;
   error?: string;
+  retentionHours: number;
+  expiresAt?: string;
+  expiredAt?: string;
+  hasFiles: boolean;
+  cleanupError?: string;
 };
 type LibraryFile = {
   path: string;
@@ -19,6 +24,8 @@ type Status = {
   missing: string[];
   ready: boolean;
   quality: string;
+  authMode: "web" | "mobile";
+  retentionHours: number;
 };
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/?$/, "/");
 const api = $fetch.create({ baseURL });
@@ -31,7 +38,15 @@ const error = ref("");
 const tab = ref("queue");
 const url = ref("");
 const quality = ref("hifi");
+const retentionHours = ref(24);
 const status = ref<Status | null>(null);
+const credentialNames = computed(() => [
+  "QOBUZ_USERNAME",
+  "QOBUZ_PASSWORD",
+  ...(status.value?.authMode === "mobile"
+    ? ["QOBUZ_APP_ID", "QOBUZ_APP_SECRET"]
+    : []),
+]);
 const jobs = ref<Job[]>([]);
 const files = ref<LibraryFile[]>([]);
 const truncated = ref(false);
@@ -48,6 +63,17 @@ const filteredFiles = computed(() =>
     file.path.toLowerCase().includes(search.value.toLowerCase()),
   ),
 );
+const availableArchives = computed(() =>
+  jobs.value.filter(
+    (job) =>
+      job.hasFiles &&
+      !["running", "queued"].includes(job.status) &&
+      !job.expiredAt &&
+      job.expiresAt &&
+      Date.parse(job.expiresAt) > Date.now(),
+  ),
+);
+const archiveUrl = (job: Job) => `${baseURL}api/jobs/${job.id}/archive`;
 const labels: Record<string, string> = {
   queued: "В очереди",
   running: "Загружается",
@@ -87,7 +113,10 @@ async function refresh() {
     jobs.value = queue;
     files.value = library.files;
     truncated.value = library.truncated;
-    if (!authenticated.value) quality.value = state.quality;
+    if (!authenticated.value) {
+      quality.value = state.quality;
+      retentionHours.value = state.retentionHours;
+    }
     authenticated.value = true;
     error.value = "";
   } catch (e: any) {
@@ -129,7 +158,11 @@ async function addJob() {
   try {
     await api("/api/jobs", {
       method: "POST",
-      body: { url: url.value, quality: quality.value },
+      body: {
+        url: url.value,
+        quality: quality.value,
+        retentionHours: retentionHours.value,
+      },
     });
     url.value = "";
     tab.value = "queue";
@@ -326,6 +359,14 @@ onBeforeUnmount(() => clearInterval(timer));
                     </option>
                   </select>
                 </div>
+                <div>
+                  <label for="retention">Хранить файлы</label>
+                  <select id="retention" v-model.number="retentionHours">
+                    <option v-for="hours in 24" :key="hours" :value="hours">
+                      {{ hours }} ч
+                    </option>
+                  </select>
+                </div>
                 <button class="primary" :disabled="busy || !status?.ready">
                   {{ busy ? "Добавляем…" : "Добавить в очередь" }}
                   <AppIcon name="download" />
@@ -336,6 +377,10 @@ onBeforeUnmount(() => clearInterval(timer));
               <span aria-hidden="true">◈</span> Оригинальные файлы, обложки и
               метаданные от OrpheusDL
             </div>
+            <p class="retention-note">
+              Файлы и ZIP автоматически удалятся через {{ retentionHours }} ч
+              после завершения задания.
+            </p>
           </section>
           <div class="stats">
             <div>
@@ -391,8 +436,15 @@ onBeforeUnmount(() => clearInterval(timer));
                 </div>
                 <span class="status" :class="job.status">{{
                   labels[job.status]
-                }}</span
-                ><button
+                }}</span>
+                <a
+                  v-if="availableArchives.some((item) => item.id === job.id)"
+                  class="zip-link"
+                  :href="archiveUrl(job)"
+                  download
+                  >↓ ZIP</a
+                >
+                <button
                   class="text-button"
                   :aria-expanded="selectedJob === job.id"
                   @click="selectedJob = selectedJob === job.id ? null : job.id"
@@ -407,6 +459,18 @@ onBeforeUnmount(() => clearInterval(timer));
                   ×
                 </button>
               </div>
+              <p class="job-retention">
+                {{
+                  job.expiredAt
+                    ? "Файлы и архив удалены"
+                    : job.expiresAt
+                      ? `Файлы доступны до ${date(job.expiresAt)}`
+                      : `Хранение: ${job.retentionHours} ч после завершения`
+                }}
+              </p>
+              <p v-if="job.cleanupError" class="job-error" role="alert">
+                {{ job.cleanupError }}
+              </p>
               <p v-if="job.error" class="job-error" role="status">
                 {{ job.error }}
               </p>
@@ -418,6 +482,28 @@ onBeforeUnmount(() => clearInterval(timer));
         </template>
 
         <section v-else-if="tab === 'library'" class="library">
+          <div v-if="availableArchives.length" class="archive-list">
+            <h2>Архивы загрузок</h2>
+            <a
+              v-for="job in availableArchives"
+              :key="job.id"
+              class="archive-card"
+              :href="archiveUrl(job)"
+              download
+            >
+              <div>
+                <strong>{{
+                  job.url.replace("https://open.qobuz.com/", "")
+                }}</strong
+                ><small>Доступен до {{ date(job.expiresAt!) }}</small>
+              </div>
+              <span>Скачать ZIP ↓</span>
+            </a>
+          </div>
+          <p class="library-note">
+            Файлы и архивы хранятся выбранное время, максимум 24 часа после
+            завершения загрузки. Скачайте их до указанного срока.
+          </p>
           <div class="section-heading">
             <h2>
               Сохранённые файлы <span>{{ files.length }}</span>
@@ -485,16 +571,15 @@ onBeforeUnmount(() => clearInterval(timer));
               status?.installed ? "Установлены" : "Не установлены"
             }}</strong>
           </div>
-          <div
-            v-for="name in [
-              'QOBUZ_USERNAME',
-              'QOBUZ_PASSWORD',
-              'QOBUZ_APP_ID',
-              'QOBUZ_APP_SECRET',
-            ]"
-            :key="name"
-            class="setting-row"
-          >
+          <div class="setting-row">
+            <span>Способ входа</span>
+            <strong>{{
+              status?.authMode === "mobile"
+                ? "Мобильный API"
+                : "Веб-вход · параметры автоматически"
+            }}</strong>
+          </div>
+          <div v-for="name in credentialNames" :key="name" class="setting-row">
             <code>{{ name }}</code
             ><strong
               :class="status?.missing.includes(name) ? 'missing' : 'configured'"
@@ -510,9 +595,11 @@ onBeforeUnmount(() => clearInterval(timer));
           <div class="settings-note">
             <h3>Перед первой загрузкой</h3>
             <p>
-              Нужен аккаунт Qobuz с доступом к загрузкам и действительные app_id
-              / app_secret. Статус «Настроено» означает наличие параметров;
-              доступ к сервису проверяется во время загрузки.
+              Для веб-входа нужны email, обычный пароль и подписка Qobuz с
+              доступом к загрузкам. Параметры веб-клиента приложение получает
+              автоматически. Ручные app_id / app_secret нужны только для режима
+              mobile. Статус «Настроено» означает наличие настроек; вход в Qobuz
+              проверяется во время загрузки.
             </p>
             <p>
               Файлы сохраняются в downloads, история — в data. Задания

@@ -1,8 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  rm,
+  readFile,
+  access,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
@@ -53,8 +60,9 @@ for (const prefix of ["/", "/dl/", "/dl", "/music/dl/"]) {
           WEB_PASSWORD: "test-interface-password",
           QOBUZ_USERNAME: "test-account",
           QOBUZ_PASSWORD: "test-account-secret",
-          QOBUZ_APP_ID: "test-app",
-          QOBUZ_APP_SECRET: "test-app-secret",
+          QOBUZ_AUTH_MODE: "web",
+          QOBUZ_APP_ID: "",
+          QOBUZ_APP_SECRET: "",
           ORPHEUS_DIR: root,
           PYTHON_BIN: resolve(".runtime/venv/bin/python"),
           DATA_DIR: join(base, "data"),
@@ -78,7 +86,10 @@ for (const prefix of ["/", "/dl/", "/dl", "/music/dl/"]) {
       await mkdir(join(root, "modules/qobuz"), { recursive: true });
       await mkdir(join(root, "orpheus"));
       await writeFile(join(root, "orpheus/__init__.py"), "");
-      await writeFile(join(root, "modules/qobuz/interface.py"), "");
+      await writeFile(
+        join(root, "modules/qobuz/interface.py"),
+        "class Qobuz:\n    pass\n",
+      );
       await writeFile(
         join(root, "orpheus/core.py"),
         `
@@ -133,6 +144,7 @@ else:
         await api("/api/jobs", "POST", {
           url: "https://open.qobuz.com/track/1",
           quality: "lossless",
+          retentionHours: 1,
         })
       ).json();
       await until(
@@ -141,6 +153,12 @@ else:
           "completed",
       );
       const finished = (await jobs()).find((job) => job.id === first.id);
+      assert.equal(finished.retentionHours, 1);
+      assert.equal(
+        Date.parse(finished.expiresAt) - Date.parse(finished.finishedAt),
+        3600_000,
+      );
+      assert.equal(finished.hasFiles, true);
       assert.ok(!finished.log.includes("test-account-secret"));
       const library = await (await api("/api/files")).json();
       assert.equal(library.files.length, 1);
@@ -149,6 +167,37 @@ else:
       );
       assert.equal(await file.text(), "fixture-audio");
       assert.match(file.headers.get("content-disposition"), /attachment/);
+      for (const hours of [0, 25, 1.5])
+        assert.equal(
+          (
+            await api("/api/jobs", "POST", {
+              url: first.url,
+              retentionHours: hours,
+            })
+          ).status,
+          400,
+        );
+      const archive = await api(`/api/jobs/${first.id}/archive`);
+      assert.equal(archive.status, 200);
+      assert.equal(archive.headers.get("content-type"), "application/zip");
+      const bytes = Buffer.from(await archive.arrayBuffer());
+      const content = execFileSync(
+        resolve(".runtime/venv/bin/python"),
+        [
+          "-c",
+          "import sys,io,zipfile,json; z=zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())); print(json.dumps({n:z.read(n).decode() for n in z.namelist()}))",
+        ],
+        { input: bytes },
+      );
+      assert.deepEqual(JSON.parse(content), {
+        "example.flac": "fixture-audio",
+      });
+      assert.deepEqual(
+        Buffer.from(
+          await (await api(`/api/jobs/${first.id}/archive`)).arrayBuffer(),
+        ),
+        bytes,
+      );
       assert.equal((await api("/api/file?path=../../etc/passwd")).status, 404);
       const failed = await (
         await api("/api/jobs", "POST", {
@@ -166,6 +215,10 @@ else:
         })
       ).json();
       assert.equal(
+        (await api(`/api/jobs/${cancelled.id}/archive`)).status,
+        409,
+      );
+      assert.equal(
         (await api("/api/jobs/" + cancelled.id, "DELETE")).status,
         200,
       );
@@ -177,6 +230,18 @@ else:
       await start();
       assert.equal((await jobs()).length, 3);
       assert.equal((await (await api("/api/files")).json()).files.length, 1);
+      await stop();
+      const historyFile = join(base, "data/jobs.json");
+      const history = JSON.parse(await readFile(historyFile, "utf8"));
+      history.find((job) => job.id === first.id).expiresAt = new Date(
+        Date.now() - 1000,
+      ).toISOString();
+      await writeFile(historyFile, JSON.stringify(history));
+      await start();
+      assert.equal((await api(`/api/jobs/${first.id}/archive`)).status, 410);
+      assert.equal((await (await api("/api/files")).json()).files.length, 0);
+      assert.ok((await jobs()).find((job) => job.id === first.id).expiredAt);
+      await assert.rejects(access(join(base, "downloads", first.id)));
       await api("/api/logout", "POST");
     } finally {
       await stop();
