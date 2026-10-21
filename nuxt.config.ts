@@ -3,6 +3,7 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   css: ["~/assets/main.css"],
   app: {
+    baseURL: process.env.NUXT_APP_BASE_URL || "/",
     head: {
       title: "QWS · OrpheusDL",
       htmlAttrs: { lang: "ru" },

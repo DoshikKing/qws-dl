@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
     httpOnly: true,
     sameSite: "strict",
     secure: getRequestURL(event).protocol === "https:",
-    path: "/",
+    path: useRuntimeConfig(event).app.baseURL.replace(/\/?$/, "/"),
     maxAge: 43200,
   });
   return { ok: true };

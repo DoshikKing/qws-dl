@@ -20,6 +20,8 @@ type Status = {
   ready: boolean;
   quality: string;
 };
+const baseURL = useRuntimeConfig().app.baseURL.replace(/\/?$/, "/");
+const api = $fetch.create({ baseURL });
 const authenticated = ref(false);
 const checking = ref(true);
 const password = ref("");
@@ -77,9 +79,9 @@ const size = (bytes: number) =>
 async function refresh() {
   try {
     const [state, queue, library] = await Promise.all([
-      $fetch<Status>("/api/status"),
-      $fetch<Job[]>("/api/jobs"),
-      $fetch<{ files: LibraryFile[]; truncated: boolean }>("/api/files"),
+      api<Status>("/api/status"),
+      api<Job[]>("/api/jobs"),
+      api<{ files: LibraryFile[]; truncated: boolean }>("/api/files"),
     ]);
     status.value = state;
     jobs.value = queue;
@@ -99,7 +101,7 @@ async function login() {
   busy.value = true;
   loginError.value = "";
   try {
-    await $fetch("/api/login", {
+    await api("/api/login", {
       method: "POST",
       body: { password: password.value },
     });
@@ -113,7 +115,7 @@ async function login() {
 }
 async function logout() {
   try {
-    await $fetch("/api/logout", { method: "POST" });
+    await api("/api/logout", { method: "POST" });
     authenticated.value = false;
     jobs.value = [];
     files.value = [];
@@ -125,7 +127,7 @@ async function logout() {
 async function addJob() {
   busy.value = true;
   try {
-    await $fetch("/api/jobs", {
+    await api("/api/jobs", {
       method: "POST",
       body: { url: url.value, quality: quality.value },
     });
@@ -140,7 +142,7 @@ async function addJob() {
 }
 async function cancel(job: Job) {
   try {
-    await $fetch(`/api/jobs/${job.id}`, { method: "DELETE" });
+    await api(`/api/jobs/${job.id}`, { method: "DELETE" });
     await refresh();
   } catch (e) {
     error.value = message(e);
@@ -172,7 +174,7 @@ onBeforeUnmount(() => clearInterval(timer));
       <p>СОХРАНЯЙТЕ ТО, ЧТО ЗВУЧИТ.</p>
     </div>
     <main class="login-panel">
-      <a class="brand" href="/"
+      <a class="brand" :href="baseURL"
         >qws<span class="brand-dot">.</span><small>ORPHEUS DL</small></a
       >
       <span class="eyebrow">ВАША ЛИЧНАЯ МУЗЫКАЛЬНАЯ БИБЛИОТЕКА</span>
@@ -201,7 +203,7 @@ onBeforeUnmount(() => clearInterval(timer));
   </div>
   <div v-else class="dashboard">
     <aside class="sidebar">
-      <a class="brand" href="/"
+      <a class="brand" :href="baseURL"
         >qws<span class="brand-dot">.</span><small>ORPHEUS DL</small></a
       >
       <div class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
@@ -448,7 +450,7 @@ onBeforeUnmount(() => clearInterval(timer));
             v-for="file in filteredFiles"
             :key="file.path"
             class="file"
-            :href="`/api/file?path=${encodeURIComponent(file.path)}`"
+            :href="`${baseURL}api/file?path=${encodeURIComponent(file.path)}`"
             download
             ><span class="file-icon" aria-hidden="true">♫</span>
             <div>

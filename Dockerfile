@@ -32,5 +32,5 @@ ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 \
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    CMD ["node", "-e", "const b=process.env.NUXT_APP_BASE_URL||'/';fetch('http://127.0.0.1:3000'+(b.endsWith('/')?b:b+'/')+'api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "bash", "/app/scripts/container-start.sh"]
