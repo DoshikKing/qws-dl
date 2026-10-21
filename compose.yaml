@@ -1,0 +1,22 @@
+services:
+  qws-dl:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      ORPHEUS_DIR: /opt/runtime/orpheusdl
+      PYTHON_BIN: /opt/runtime/venv/bin/python
+      DATA_DIR: /data
+      DOWNLOAD_DIR: /downloads
+    ports:
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-3000}:3000"
+    volumes:
+      - app-data:/data
+      - downloads:/downloads
+    stop_grace_period: 15s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  app-data:
+  downloads:

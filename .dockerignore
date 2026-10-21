@@ -1,0 +1,12 @@
+.git
+node_modules
+.nuxt
+.output
+.env
+.env.*
+.runtime
+data
+downloads
+test-results
+playwright-report
+__pycache__

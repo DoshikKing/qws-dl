@@ -1,0 +1,213 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  symlink,
+  rm,
+  chmod,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { normalizeUrl, redact, DownloadQueue } from "../server/utils/queue.mjs";
+import {
+  passwordMatches,
+  sessionToken,
+  validSession,
+} from "../server/utils/auth.mjs";
+import { safeFile, listFiles } from "../server/utils/files.mjs";
+
+test("accepts Qobuz media links and rejects arbitrary hosts, credentials and CLI arguments", () => {
+  assert.equal(
+    normalizeUrl("https://www.qobuz.com/gb-en/album/title/abc123?x=1"),
+    "https://open.qobuz.com/album/abc123",
+  );
+  assert.equal(
+    normalizeUrl("https://play.qobuz.com/track/123"),
+    "https://open.qobuz.com/track/123",
+  );
+  for (const bad of [
+    "--help",
+    "http://open.qobuz.com/track/1",
+    "https://evil.com/track/1",
+    "https://open.qobuz.com.evil.com/track/1",
+    "https://user:pass@open.qobuz.com/track/1",
+    "https://open.qobuz.com:4000/track/1",
+    "https://open.qobuz.com/redirect",
+    null,
+  ]) {
+    assert.throws(() => normalizeUrl(bad));
+  }
+});
+
+test("sessions expire, require the right password and reject altered signatures", () => {
+  const token = sessionToken("long-secret");
+  assert.ok(validSession(token, "long-secret"));
+  assert.ok(!validSession(token, "wrong-secret"));
+  assert.ok(!validSession(token + "a", "long-secret"));
+  assert.ok(
+    !validSession(
+      sessionToken("long-secret", Date.now() - 13 * 3600_000),
+      "long-secret",
+    ),
+  );
+  assert.ok(
+    !validSession(
+      sessionToken("long-secret", Date.now() + 60_000),
+      "long-secret",
+    ),
+  );
+  assert.ok(!passwordMatches("", ""));
+});
+
+test("redacts credentials and signed URLs from process logs", () => {
+  const old = process.env.QOBUZ_PASSWORD;
+  process.env.QOBUZ_PASSWORD = "example-secret";
+  try {
+    const clean = redact(
+      "example-secret https://qobuz.com/a?user_auth_token=token password: hidden",
+    );
+    for (const secret of [
+      "example-secret",
+      "https://",
+      "token=token",
+      "hidden",
+    ])
+      assert.ok(!clean.includes(secret));
+  } finally {
+    if (old === undefined) delete process.env.QOBUZ_PASSWORD;
+    else process.env.QOBUZ_PASSWORD = old;
+  }
+});
+
+test("file access stays inside downloads including symlinks; lists supported files", async () => {
+  const base = await mkdtemp(join(tmpdir(), "qws-files-"));
+  try {
+    const root = join(base, "downloads");
+    await mkdir(root);
+    await writeFile(join(root, "song.flac"), "audio");
+    await writeFile(join(base, "secret"), "private");
+    await symlink(join(base, "secret"), join(root, "escape.flac"));
+    assert.equal(await safeFile(root, "song.flac"), join(root, "song.flac"));
+    await assert.rejects(safeFile(root, "../secret"));
+    await assert.rejects(safeFile(root, "escape.flac"));
+    await assert.rejects(safeFile(root, root));
+    assert.deepEqual(
+      (await listFiles(root)).files.map((file) => file.name),
+      ["song.flac"],
+    );
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test("restart records interrupted jobs as failed and persists history", async () => {
+  const base = await mkdtemp(join(tmpdir(), "qws-queue-"));
+  try {
+    await writeFile(
+      join(base, "jobs.json"),
+      JSON.stringify([{ id: "old", status: "running" }]),
+    );
+    const queue = new DownloadQueue({
+      data: base,
+      downloads: join(base, "downloads"),
+    });
+    assert.equal(queue.jobs[0].status, "failed");
+    assert.match(queue.jobs[0].error, /перезапущен/);
+    queue.stopping = true;
+    const job = queue.add("https://open.qobuz.com/album/abc", "hifi");
+    assert.equal(job.status, "queued");
+    assert.ok(queue.cancel(job.id));
+    assert.equal(job.status, "cancelled");
+    assert.equal(queue.cancel("missing"), false);
+    queue.close();
+    const restored = new DownloadQueue({
+      data: base,
+      downloads: join(base, "downloads"),
+    });
+    assert.equal(restored.jobs[0].status, "cancelled");
+    restored.close();
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test("worker serializes processes, handles failures and cancels a running job", async () => {
+  const base = await mkdtemp(join(tmpdir(), "qws-worker-"));
+  const saved = Object.fromEntries(
+    [
+      "QOBUZ_USERNAME",
+      "QOBUZ_PASSWORD",
+      "QOBUZ_APP_ID",
+      "QOBUZ_APP_SECRET",
+    ].map((key) => [key, process.env[key]]),
+  );
+  let queue;
+  const waitFor = async (predicate) => {
+    const until = Date.now() + 5000;
+    while (!predicate()) {
+      if (Date.now() > until)
+        throw new Error("Worker did not reach expected state");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  };
+  try {
+    for (const key in saved) process.env[key] = "test-secret";
+    await mkdir(join(base, "modules/qobuz"), { recursive: true });
+    await writeFile(join(base, "orpheus.py"), "");
+    await writeFile(join(base, "modules/qobuz/interface.py"), "");
+    const runner = join(base, "fake-runner.mjs");
+    await writeFile(
+      runner,
+      `
+      import {writeFileSync} from 'node:fs';
+      console.log('Started test-secret https://qobuz.com/?token=private');
+      if (process.argv[3].endsWith('/3')) setTimeout(()=>{},10000);
+      else setTimeout(()=>{
+        if (process.argv[3].endsWith('/2')) { console.error('Download failed'); process.exit(2) }
+        writeFileSync(process.env.DOWNLOAD_DIR+'/test.flac','audio');
+      },100);
+    `,
+    );
+    const python = join(base, "python-shim");
+    await writeFile(
+      python,
+      `#!/bin/sh\nshift\nexec "${process.execPath}" "$@"\n`,
+    );
+    await chmod(python, 0o700);
+    queue = new DownloadQueue({
+      root: base,
+      python,
+      data: join(base, "data"),
+      downloads: join(base, "downloads"),
+      runner,
+      timeout: 5,
+    });
+    const first = queue.add("https://open.qobuz.com/track/1", "hifi");
+    const second = queue.add("https://open.qobuz.com/track/2", "lossless");
+    assert.equal(first.status, "running");
+    assert.equal(second.status, "queued");
+    await waitFor(() => second.status === "failed");
+    assert.equal(first.status, "completed");
+    assert.ok(!first.log.includes("test-secret"));
+    assert.ok(!first.log.includes("https://"));
+    assert.ok(
+      (await listFiles(join(base, "downloads"))).files.some(
+        (file) => file.name === "test.flac",
+      ),
+    );
+    const third = queue.add("https://open.qobuz.com/track/3", "high");
+    assert.equal(third.status, "running");
+    queue.cancel(third.id);
+    await waitFor(() => !queue.active);
+    assert.equal(third.status, "cancelled");
+  } finally {
+    queue?.close();
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    await rm(base, { recursive: true, force: true });
+  }
+});
