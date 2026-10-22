@@ -347,3 +347,63 @@ test("expiry timer deletes files without HTTP activity", async () => {
     await rm(base, { recursive: true, force: true });
   }
 });
+
+test("ZIP names preserve readable Unicode, remove unsafe characters and keep their extension", async () => {
+  const { archiveFilename } = await import("../server/utils/archive.mjs");
+  const job = {
+    url: "https://open.qobuz.com/album/abc123",
+    title: "Исполнитель - Альбом",
+  };
+  assert.equal(archiveFilename(job), "Исполнитель - Альбом.zip");
+  assert.equal(
+    archiveFilename({ ...job, title: '../A/B: C\r\n"?' }),
+    ".. A B C.zip",
+  );
+  const long = archiveFilename({ ...job, title: "🎵".repeat(200) });
+  assert.ok(Buffer.byteLength(long, "utf8") <= 184);
+  assert.ok(long.endsWith(".zip"));
+  assert.equal(
+    archiveFilename({ ...job, title: null }),
+    "qobuz-album-abc123.zip",
+  );
+});
+
+test("titles are restored from metadata and older album folders without exposing UUIDs", async () => {
+  const base = await mkdtemp(join(tmpdir(), "qws-titles-"));
+  let queue;
+  try {
+    const settings = {
+      data: join(base, "data"),
+      downloads: join(base, "downloads"),
+    };
+    queue = new DownloadQueue(settings);
+    queue.stopping = true;
+    const job = queue.add("https://open.qobuz.com/album/abc123", "hifi");
+    await mkdir(join(queue.folder(job), "Исполнитель - Альбом"), {
+      recursive: true,
+    });
+    assert.equal(queue.readTitle(job), "Исполнитель - Альбом");
+    await writeFile(
+      join(queue.folder(job), ".qws-metadata.json"),
+      JSON.stringify({ title: "Артист - Альбом (версия)" }),
+    );
+    const titleFile = join(queue.folder(job), ".qws-metadata.json");
+    await writeFile(
+      titleFile,
+      JSON.stringify({ title: "A" + "🎵".repeat(600) }),
+    );
+    assert.doesNotThrow(() => encodeURIComponent(queue.readTitle(job)));
+    assert.equal(Array.from(queue.readTitle(job)).length, 500);
+    await writeFile(
+      titleFile,
+      JSON.stringify({ title: "Артист - Альбом (версия)" }),
+    );
+    queue.close();
+    queue = new DownloadQueue(settings);
+    queue.close();
+    assert.equal(queue.jobs[0].title, "Артист - Альбом (версия)");
+  } finally {
+    queue?.close();
+    await rm(base, { recursive: true, force: true });
+  }
+});

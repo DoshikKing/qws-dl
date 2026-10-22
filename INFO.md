@@ -111,6 +111,12 @@ Each job uses a separate UUID directory. Its expiry time appears in the queue.
 Use the **ZIP** link in the queue or the archive card in the library to download the whole job.
 Individual file downloads remain available.
 
+The queue and ZIP downloads use the artist and media title returned by OrpheusDL.
+Names appear once the worker fetches metadata; until then, the UI shows the media type and Qobuz ID.
+New audio files include the artist and track title, with track numbers inside albums/playlists.
+ZIP names preserve Unicode. Existing files are not renamed; older job labels reuse their album folder
+or single audio filename when available.
+
 ZIP archives are built on demand, cached inside the job directory and use ZIP64 for large files.
 Audio is not recompressed, and the original folder structure is preserved.
 Archive creation ignores symlinks; an archive never includes itself.

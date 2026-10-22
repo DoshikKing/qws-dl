@@ -1,7 +1,7 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { getQueue } from "../../../utils/queue.mjs";
-import { jobArchive } from "../../../utils/archive.mjs";
+import { jobArchive, archiveFilename } from "../../../utils/archive.mjs";
 
 export default defineEventHandler(async (event) => {
   const queue = getQueue();
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
   setResponseHeaders(event, {
     "Content-Type": "application/zip",
     "Content-Length": String((await stat(file)).size),
-    "Content-Disposition": `attachment; filename="qobuz-${job.id}.zip"`,
+    "Content-Disposition": `attachment; filename="qobuz-${job.id}.zip"; filename*=UTF-8''${encodeURIComponent(archiveFilename(job)).replace(/['()*]/g, (char) => "%" + char.charCodeAt(0).toString(16).toUpperCase())}`,
   });
   return sendStream(event, createReadStream(file));
 });

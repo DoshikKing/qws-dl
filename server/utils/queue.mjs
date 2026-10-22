@@ -142,6 +142,7 @@ export class DownloadQueue {
           "Сервер перезапущен во время загрузки. Добавьте ссылку повторно.";
         job.finishedAt = new Date().toISOString();
       }
+      job.title ||= this.readTitle(job);
       job.retentionHours = Math.min(
         24,
         Math.max(1, Number(job.retentionHours) || 24),
@@ -288,6 +289,7 @@ export class DownloadQueue {
         pending = lines.pop();
         if (lines.length) {
           job.log = (job.log + redact(lines.join("\n")) + "\n").slice(-24000);
+          job.title ||= this.readTitle(job);
           this.save();
         }
         // Discard huge unterminated lines instead of retaining unbounded process output.
@@ -325,6 +327,7 @@ export class DownloadQueue {
       job.expiresAt = new Date(
         Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
       ).toISOString();
+      job.title ||= this.readTitle(job);
       job.hasFiles = this.hasFiles(job);
       this.active = null;
       this.save();
@@ -347,6 +350,33 @@ export class DownloadQueue {
     )
       throw new Error("Invalid job directory");
     return join(this.settings.downloads, job.id);
+  }
+
+  readTitle(job) {
+    try {
+      const folder = this.folder(job);
+      try {
+        const { title } = JSON.parse(
+          readFileSync(join(folder, ".qws-metadata.json"), "utf8"),
+        );
+        if (typeof title === "string" && title.trim())
+          return Array.from(title.replace(/[\x00-\x1f\x7f]/g, " ").trim())
+            .slice(0, 500)
+            .join("");
+      } catch {}
+      // Older downloads have no metadata: reuse the album folder or single audio filename.
+      const entries = readdirSync(folder, { withFileTypes: true }).filter(
+        (entry) =>
+          entry.isDirectory() ||
+          (entry.isFile() &&
+            /\.(flac|mp3|m4a|wav|ogg|opus)$/i.test(entry.name)),
+      );
+      if (entries.length === 1)
+        return entries[0].isDirectory()
+          ? entries[0].name
+          : entries[0].name.replace(/\.[^.]+$/, "");
+    } catch {}
+    return null;
   }
 
   hasFiles(job) {

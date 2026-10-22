@@ -96,7 +96,13 @@ for (const [prefix, mode] of [
       await writeFile(join(root, "orpheus/__init__.py"), "");
       await writeFile(
         join(root, "modules/qobuz/interface.py"),
-        "class Qobuz:\n    pass\n",
+        `from types import SimpleNamespace
+class Qobuz:
+    pass
+class ModuleInterface:
+    def get_track_info(self, track_id, *args, **kwargs):
+        return SimpleNamespace(name='Название', artists=['Исполнитель'])
+`,
       );
       await writeFile(
         join(root, "orpheus/core.py"),
@@ -116,6 +122,8 @@ class Orpheus:
         `
 import os, sys, time
 from pathlib import Path
+from modules.qobuz.interface import ModuleInterface
+ModuleInterface().get_track_info(sys.argv[-1].split('/')[-1])
 time.sleep(0.15)
 if sys.argv[-1].endswith('/2'):
     print('=== Track 2 failed ===')
@@ -123,7 +131,7 @@ elif sys.argv[-1].endswith('/3'):
     time.sleep(60)
 else:
     print(os.environ.get('QOBUZ_AUTH_TOKEN') or os.environ['QOBUZ_PASSWORD'])
-    Path(os.environ['DOWNLOAD_DIR'], 'example.flac').write_bytes(b'fixture-audio')
+    Path(os.environ['DOWNLOAD_DIR'], 'Исполнитель - Название.flac').write_bytes(b'fixture-audio')
 `,
       );
       await start();
@@ -162,6 +170,7 @@ else:
       );
       const finished = (await jobs()).find((job) => job.id === first.id);
       assert.equal(finished.retentionHours, 1);
+      assert.equal(finished.title, "Исполнитель - Название");
       assert.equal(
         Date.parse(finished.expiresAt) - Date.parse(finished.finishedAt),
         3600_000,
@@ -180,8 +189,17 @@ else:
         settings.modules.qobuz.password,
         mode === "token" ? "test-session-secret" : "test-account-secret",
       );
+      assert.equal(
+        settings.global.formatting.single_full_path_format,
+        "{artist} - {name}",
+      );
+      assert.equal(
+        settings.global.formatting.track_filename_format,
+        "{track_number}. {artist} - {name}",
+      );
       const library = await (await api("/api/files")).json();
       assert.equal(library.files.length, 1);
+      assert.equal(library.files[0].name, "Исполнитель - Название.flac");
       const file = await api(
         "/api/file?path=" + encodeURIComponent(library.files[0].path),
       );
@@ -200,6 +218,11 @@ else:
       const archive = await api(`/api/jobs/${first.id}/archive`);
       assert.equal(archive.status, 200);
       assert.equal(archive.headers.get("content-type"), "application/zip");
+      assert.ok(
+        decodeURIComponent(archive.headers.get("content-disposition")).includes(
+          "Исполнитель - Название.zip",
+        ),
+      );
       const bytes = Buffer.from(await archive.arrayBuffer());
       const content = execFileSync(
         resolve(".runtime/venv/bin/python"),
@@ -210,7 +233,7 @@ else:
         { input: bytes },
       );
       assert.deepEqual(JSON.parse(content), {
-        "example.flac": "fixture-audio",
+        "Исполнитель - Название.flac": "fixture-audio",
       });
       assert.deepEqual(
         Buffer.from(
@@ -234,6 +257,11 @@ else:
           url: "https://open.qobuz.com/track/3",
         })
       ).json();
+      await until(
+        async () =>
+          (await jobs()).find((job) => job.id === cancelled.id)?.title ===
+          "Исполнитель - Название",
+      );
       assert.equal(
         (await api(`/api/jobs/${cancelled.id}/archive`)).status,
         409,

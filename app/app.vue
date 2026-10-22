@@ -2,6 +2,7 @@
 type Job = {
   id: string;
   url: string;
+  title?: string | null;
   quality: string;
   status: string;
   createdAt: string;
@@ -67,7 +68,9 @@ const activeJobs = computed(() =>
 );
 const filteredFiles = computed(() =>
   files.value.filter((file) =>
-    file.path.toLowerCase().includes(search.value.toLowerCase()),
+    `${file.path} ${fileJobTitle(file)}`
+      .toLowerCase()
+      .includes(search.value.toLowerCase()),
   ),
 );
 const availableArchives = computed(() =>
@@ -80,6 +83,21 @@ const availableArchives = computed(() =>
       Date.parse(job.expiresAt) > Date.now(),
   ),
 );
+const mediaTypes: Record<string, string> = {
+  track: "Трек",
+  album: "Альбом",
+  playlist: "Плейлист",
+  artist: "Исполнитель",
+  interpreter: "Исполнитель",
+};
+const mediaType = (job: Job) =>
+  mediaTypes[job.url.split("/")[3] || ""] || "Qobuz";
+const jobTitle = (job: Job) =>
+  job.title || `${mediaType(job)} · ${job.url.split("/").pop()}`;
+const fileJobTitle = (file: LibraryFile) => {
+  const job = jobs.value.find((job) => job.id === file.path.split("/")[0]);
+  return job ? jobTitle(job) : "";
+};
 const archiveUrl = (job: Job) => `${baseURL}api/jobs/${job.id}/archive`;
 const labels: Record<string, string> = {
   queued: "В очереди",
@@ -449,12 +467,11 @@ onBeforeUnmount(() => clearInterval(timer));
                             :href="job.url"
                             target="_blank"
                             rel="noreferrer"
-                            >{{
-                              job.url.replace("https://open.qobuz.com/", "")
-                            }}</a
+                            >{{ jobTitle(job) }}</a
                           >
                           <p class="item-meta">
-                            {{
+                            {{ mediaType(job) }}<span>·</span
+                            >{{
                               qualities[job.quality]?.split(" · ")[0] ||
                               job.quality
                             }}<span>·</span>{{ date(job.createdAt) }}
@@ -472,7 +489,7 @@ onBeforeUnmount(() => clearInterval(timer));
                             "
                             class="quiet-button"
                             :href="archiveUrl(job)"
-                            :aria-label="`Скачать ZIP: ${job.url}`"
+                            :aria-label="`Скачать ZIP: ${jobTitle(job)}`"
                             download
                             ><AppIcon name="download" /><span>ZIP</span></a
                           >
@@ -492,7 +509,7 @@ onBeforeUnmount(() => clearInterval(timer));
                             v-if="['queued', 'running'].includes(job.status)"
                             type="button"
                             class="icon-button cancel-button"
-                            :aria-label="`Отменить ${job.url}`"
+                            :aria-label="`Отменить ${jobTitle(job)}`"
                             @click="cancel(job)"
                           >
                             <AppIcon name="close" />
@@ -555,9 +572,7 @@ onBeforeUnmount(() => clearInterval(timer));
                       download
                       ><span class="item-icon"><AppIcon name="archive" /></span
                       ><span class="item-description"
-                        ><strong class="item-title">{{
-                          job.url.replace("https://open.qobuz.com/", "")
-                        }}</strong
+                        ><strong class="item-title">{{ jobTitle(job) }}</strong
                         ><span class="item-meta"
                           >До {{ date(job.expiresAt!) }}</span
                         ></span
@@ -607,6 +622,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         ><strong class="item-title">{{ file.name }}</strong
                         ><span class="item-meta">{{
                           file.path.split("/").slice(1, -1).join(" / ") ||
+                          fileJobTitle(file) ||
                           "Файл"
                         }}</span></span
                       ><span class="file-size">{{ size(file.size) }}</span

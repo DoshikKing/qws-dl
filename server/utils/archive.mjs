@@ -52,3 +52,16 @@ export async function jobArchive(queue, job) {
 export function closeArchives() {
   for (const task of pending.values()) task.child?.kill("SIGKILL");
 }
+
+export function archiveFilename(job) {
+  const fallback =
+    "qobuz-" + new URL(job.url).pathname.slice(1).replaceAll("/", "-");
+  let name = (job.title || fallback)
+    .replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  while (Buffer.byteLength(name, "utf8") > 180)
+    name = Array.from(name).slice(0, -1).join("");
+  name = name.replace(/[. ]+$/, "") || fallback;
+  return name + ".zip";
+}

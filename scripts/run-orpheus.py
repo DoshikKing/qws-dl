@@ -7,6 +7,7 @@ import runpy
 import sys
 
 from qobuz_web import QobuzWebError
+from media_title import install_title_reporter
 
 
 def main():
@@ -35,6 +36,11 @@ def main():
     settings = json.loads(config_path.read_text())
     settings['global']['general']['download_quality'] = quality
     settings['global']['advanced']['debug_mode'] = False
+    settings['global'].setdefault('formatting', {}).update({
+        'album_format': '{artist} - {name}{explicit}',
+        'track_filename_format': '{track_number}. {artist} - {name}',
+        'single_full_path_format': '{artist} - {name}',
+    })
     for field in ('username', 'password', 'app_id', 'app_secret'):
         value = os.environ.get('QOBUZ_' + field.upper(), '')
         if auth_mode == 'token' and field in {'username', 'password'}:
@@ -64,6 +70,9 @@ def main():
 
         def isatty(self):
             return False
+
+    from modules.qobuz.interface import ModuleInterface
+    install_title_reporter(ModuleInterface, url)
 
     output = Output()
     sys.stdout = output

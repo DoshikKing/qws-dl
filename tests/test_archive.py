@@ -16,6 +16,7 @@ class ArchiveTest(unittest.TestCase):
             (root / 'Альбом').mkdir(parents=True)
             (root / 'Альбом/01. Трек.flac').write_bytes(b'audio')
             (root / 'cover.jpg').write_bytes(b'cover')
+            (root / '.qws-metadata.json').write_text('{"title":"private metadata"}')
             (base / 'private').write_text('private')
             (root / 'leak.flac').symlink_to(base / 'private')
             (root / 'outside').symlink_to(base, target_is_directory=True)
