@@ -1600,3 +1600,125 @@ a.item-title:hover {
     display: inline;
   }
 }
+
+/* Catalog search shares the download controls and the hierarchy in DESIGN.md. */
+.compose-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+.compose-heading h2 {
+  margin: 0;
+}
+.input-mode {
+  display: flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--field);
+}
+.input-mode button {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  color: var(--secondary);
+}
+.input-mode button[aria-pressed="true"] {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.catalog-search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+.search-message {
+  margin-top: 16px;
+  overflow-wrap: anywhere;
+}
+.catalog-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+}
+.catalog-results {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.catalog-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+.catalog-choice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0;
+  min-height: 64px;
+  cursor: pointer;
+  min-width: 0;
+}
+.catalog-choice input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+.catalog-choice input:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
+.catalog-choice:has(input:disabled) {
+  cursor: default;
+}
+.catalog-choice .form-success {
+  font-size: 12px;
+  display: block;
+  margin-top: 4px;
+}
+.catalog-more {
+  display: flex;
+  margin: 12px auto;
+}
+.catalog-download-options {
+  margin-top: 22px;
+}
+.catalog-download-options .form-options {
+  margin-top: 0;
+}
+@media (max-width: 760px) {
+  .compose-heading {
+    gap: 16px;
+  }
+  .input-mode {
+    width: 100%;
+  }
+  .input-mode button {
+    flex: 1;
+  }
+  .catalog-search-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .catalog-choice {
+    gap: 12px;
+  }
+  .catalog-heading {
+    flex-wrap: wrap;
+  }
+}
+@media (forced-colors: active) {
+  .input-mode button[aria-pressed="true"] {
+    border: 1px solid Highlight;
+  }
+}

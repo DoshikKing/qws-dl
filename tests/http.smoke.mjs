@@ -26,6 +26,7 @@ for (const [prefix, mode] of [
     // This fixture exercises our bridge and queue without pretending to authenticate with live Qobuz.
     const base = await mkdtemp(join(tmpdir(), "qws-http-"));
     const root = join(base, "orpheus");
+    const python = join(base, "python-shim");
     const portServer = createServer();
     portServer.listen(0, "127.0.0.1");
     await once(portServer, "listening");
@@ -75,7 +76,7 @@ for (const [prefix, mode] of [
           QOBUZ_APP_ID: "",
           QOBUZ_APP_SECRET: "",
           ORPHEUS_DIR: root,
-          PYTHON_BIN: resolve(".runtime/venv/bin/python"),
+          PYTHON_BIN: python,
           DATA_DIR: join(base, "data"),
           DOWNLOAD_DIR: join(base, "downloads"),
         },
@@ -137,7 +138,26 @@ else:
     Path(os.environ['DOWNLOAD_DIR'], 'Исполнитель - Название.flac').write_bytes(b'fixture-audio')
 `,
       );
+      await writeFile(
+        python,
+        `#!${resolve(".runtime/venv/bin/python")}
+import os,sys,json
+if len(sys.argv)>1 and sys.argv[1].endswith('search_qobuz.py'):
+    query, offset = sys.argv[3], int(sys.argv[4])
+    if query == 'service-error':
+        print(json.dumps({'error':'Fixture search unavailable'}));sys.exit(1)
+    tracks = [{'id':'1','url':'https://open.qobuz.com/track/1','title':'Название','artist':'Исполнитель','album':'Альбом','duration':181,'streamable':True}]
+    print(json.dumps({'tracks':tracks,'total':21,'offset':offset,'hasMore':offset==0},ensure_ascii=False))
+else:
+    os.execv(${JSON.stringify(resolve(".runtime/venv/bin/python"))},[${JSON.stringify(resolve(".runtime/venv/bin/python"))},*sys.argv[1:]])
+`,
+        { mode: 0o700 },
+      );
       await start();
+      assert.equal(
+        (await api("/api/search", "POST", { query: "Песня" })).status,
+        401,
+      );
       assert.equal((await api("/api/jobs")).status, 401);
       assert.equal(
         (
@@ -160,6 +180,28 @@ else:
       );
       cookie = login.headers.get("set-cookie").split(";")[0];
       assert.equal((await (await api("/api/status")).json()).ready, true);
+      for (const body of [
+        { query: "" },
+        { query: "x".repeat(201) },
+        { query: "q", offset: -1 },
+      ])
+        assert.equal((await api("/api/search", "POST", body)).status, 400);
+      const catalog = await (
+        await api("/api/search", "POST", { query: "Песня" })
+      ).json();
+      assert.equal(catalog.tracks[0].url, "https://open.qobuz.com/track/1");
+      assert.equal(catalog.tracks[0].artist, "Исполнитель");
+      assert.equal(catalog.hasMore, true);
+      const nextPage = await (
+        await api("/api/search", "POST", { query: "Песня", offset: 20 })
+      ).json();
+      assert.equal(nextPage.offset, 20);
+      assert.equal(nextPage.hasMore, false);
+      assert.equal(
+        (await api("/api/search", "POST", { query: "service-error" })).status,
+        502,
+      );
+
       assert.equal(
         (await api("/api/jobs", "POST", { url: "https://evil.test/track/1" }))
           .status,
@@ -167,7 +209,7 @@ else:
       );
       const first = await (
         await api("/api/jobs", "POST", {
-          url: "https://open.qobuz.com/track/1",
+          url: catalog.tracks[0].url,
           quality: "lossless",
           retentionHours: 1,
         })
@@ -339,6 +381,18 @@ else:
         const aliceCookie = cookie;
         const alice = await (await api("/api/account")).json();
         assert.equal(alice.role, "user");
+        assert.equal(
+          (await api("/api/search", "POST", { query: "Песня" })).status,
+          200,
+        );
+        const searchFailure = await api("/api/search", "POST", {
+          query: "service-error",
+        });
+        assert.equal(searchFailure.status, 502);
+        assert.ok(
+          (await searchFailure.json()).statusMessage.includes("администратору"),
+        );
+
         assert.equal(alice.invitesRemaining, 1);
         assert.equal((await api("/api/admin/users")).status, 403);
         assert.equal(

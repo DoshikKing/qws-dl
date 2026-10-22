@@ -148,6 +148,23 @@ Tokens are credentials: do not share them in chat, screenshots, HAR exports, log
 The worker stores its private Orpheus configuration with restrictive permissions.
 If the session expires, renew it from your browser; the application does not acquire someone else's session.
 
+## Search Qobuz tracks
+
+In **Загрузки → Поиск Qobuz**, enter a song title or artist and press **Найти**.
+Results show track/version, artist, album and duration. Select the tracks you want,
+choose quality and retention, and add them to the queue. Unstreamable results cannot
+be selected. **Показать ещё** loads more results, 20 at a time (up to 1000); select
+up to 50 tracks per action. Each selected track becomes a separate owned job and ZIP.
+If the queue fills or a request fails, successfully added tracks stay marked and the
+remaining selection can be retried; leaving the search stops any remaining additions.
+
+Search requires an app account and uses the existing server Qobuz credentials in
+`web`, `token` or `mobile` mode. No extra keys or environment variables are needed.
+It reads catalog metadata only, without modifying the downloader's configuration or sessions.
+Requests run on explicit submission, with a 45-second timeout, one search per user and
+two searches globally at once. Errors never include upstream response bodies or credentials.
+Availability and actual download quality depend on Qobuz and the configured account.
+
 ## ZIP downloads and automatic expiry
 
 Select **1–24 hours** when adding a download. `DOWNLOAD_RETENTION_HOURS` supplies the default.
@@ -201,7 +218,7 @@ The queue accepts up to 50 active jobs. Recent history keeps 200 records plus un
 so archive cleanup is not lost. The archive library lists retained downloads.
 OrpheusDL controls tagging and track availability. Detected individual-track failures mark
 the job failed even if upstream exits with code 0.
-The UI accepts media links; catalog search is not included.
+The UI accepts media links and supports Qobuz track search.
 
 ## nginx under `/dl/`
 

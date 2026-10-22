@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(ROOT / '.runtime/orpheusdl'))
 from qobuz_web import web_api_class, QobuzWebError
 from modules.qobuz.qobuz_api import Qobuz
+from search_qobuz import search_tracks
 
 
 class WebLoginTest(unittest.TestCase):
@@ -91,6 +92,12 @@ class WebLoginTest(unittest.TestCase):
             if params['request_sig'] != hashlib.md5(signature.encode()).hexdigest():
                 return self.response(url, {'message': 'invalid fixture secret'}, 400)
             return self.response(url, {'url': 'https://media.example.test/audio.flac', 'format_id': params['format_id']})
+        if url.endswith('/catalog/search'):
+            self.assertEqual(params['query'], 'Песня & исполнитель')
+            self.assertEqual(params['type'], 'tracks')
+            self.assertEqual(params['offset'], 20)
+            self.assertEqual(params['limit'], 20)
+            return self.response(url, {'tracks': {'total': 45, 'items': [{'id': 42, 'title': 'Песня', 'performer': {'name': 'Исполнитель'}, 'album': {'title': 'Альбом'}, 'duration': 181, 'streamable': True}]}})
         if url.endswith(('/album/get', '/track/get', '/playlist/get', '/artist/get')):
             return self.response(url, {'id': 'fixture-metadata'})
         self.fail('Unexpected outbound request: ' + url)
@@ -107,6 +114,17 @@ class WebLoginTest(unittest.TestCase):
         self.assertEqual(self.login_calls, 1)
         for secret in ['fixture-password', 'fixture-web-token', 'fixture-valid-secret']:
             self.assertNotIn(secret, output.getvalue())
+
+    def test_search_uses_web_or_browser_token_authentication_and_pagination(self):
+        for mode in ['web', 'token']:
+            with self.subTest(mode=mode), patch.dict(os.environ, {'QOBUZ_AUTH_MODE':mode, 'QOBUZ_USER_ID':'12345', 'QOBUZ_AUTH_TOKEN':'fixture-browser-token'}):
+                result = search_tracks('Песня & исполнитель', 20)
+                self.assertEqual(result['tracks'][0]['url'], 'https://open.qobuz.com/track/42')
+                self.assertEqual(result['tracks'][0]['artist'], 'Исполнитель')
+                self.assertTrue(result['tracks'][0]['streamable'])
+                self.assertTrue(result['hasMore'])
+                self.assertEqual(result['offset'], 20)
+        self.assertEqual(self.login_calls, 2)
 
     def test_auth_failure_is_actionable_without_credentials(self):
         self.mode = '401'

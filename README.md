@@ -2,7 +2,7 @@
 
 [Русская версия](README.ru.md) · [Setup and configuration](INFO.md)
 
-A Nuxt web interface for OrpheusDL and its Qobuz module. Queue media links,
+A Nuxt web interface for OrpheusDL and its Qobuz module. Search Qobuz tracks or queue media links,
 choose audio quality, view logs, cancel jobs, and download completed jobs as ZIP archives.
 Accounts are invitation-only; each user has a personal invite code and an invitation limit.
 The administrator manages accounts and can delete downloads from Storage.

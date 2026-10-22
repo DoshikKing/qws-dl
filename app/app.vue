@@ -56,6 +56,7 @@ const pageTitle = computed(
   () => views.value.find((view) => view.id === tab.value)?.label || "Загрузки",
 );
 const url = ref("");
+const inputMode = ref<"link" | "search">("link");
 const quality = ref("hifi");
 const retentionHours = ref(24);
 const status = ref<Status | null>(null);
@@ -341,8 +342,29 @@ onBeforeUnmount(() => clearInterval(timer));
                   class="panel compose-panel"
                   aria-labelledby="new-download"
                 >
-                  <h2 id="new-download">Новая загрузка</h2>
-                  <form @submit.prevent="addJob">
+                  <div class="compose-heading">
+                    <h2 id="new-download">Новая загрузка</h2>
+                    <div
+                      class="input-mode"
+                      role="group"
+                      aria-label="Способ добавления"
+                    >
+                      <button
+                        type="button"
+                        :aria-pressed="inputMode === 'link'"
+                        @click="inputMode = 'link'"
+                      >
+                        По ссылке</button
+                      ><button
+                        type="button"
+                        :aria-pressed="inputMode === 'search'"
+                        @click="inputMode = 'search'"
+                      >
+                        Поиск Qobuz
+                      </button>
+                    </div>
+                  </div>
+                  <form v-if="inputMode === 'link'" @submit.prevent="addJob">
                     <div class="field">
                       <label for="url">Ссылка Qobuz</label>
                       <div class="input-with-icon">
@@ -400,6 +422,14 @@ onBeforeUnmount(() => clearInterval(timer));
                       завершения.
                     </p>
                   </form>
+                  <QobuzSearch
+                    v-else
+                    v-model:quality="quality"
+                    v-model:retention-hours="retentionHours"
+                    :qualities="qualities"
+                    :disabled="!status?.ready"
+                    @queued="refresh"
+                  />
                 </section>
 
                 <section class="section" aria-labelledby="queue-heading">
@@ -411,7 +441,13 @@ onBeforeUnmount(() => clearInterval(timer));
                   <div v-if="!jobs.length" class="empty-state">
                     <AppIcon name="queue" />
                     <h3>Заданий нет</h3>
-                    <p>Добавьте ссылку Qobuz.</p>
+                    <p>
+                      {{
+                        inputMode === "search"
+                          ? "Выберите треки и добавьте их в очередь."
+                          : "Добавьте ссылку Qobuz."
+                      }}
+                    </p>
                   </div>
                   <TransitionGroup
                     v-else
