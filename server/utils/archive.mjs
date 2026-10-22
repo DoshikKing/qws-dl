@@ -1,40 +1,48 @@
 import { spawn } from "node:child_process";
-import { realpath, stat } from "node:fs/promises";
+import { realpath, lstat } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 const pending = new Map();
 
 export async function jobArchive(queue, job) {
-  if (queue.expired(job)) throw new Error("expired");
+  if (queue.expired(job) || job.deletedAt) throw new Error("expired");
   if (
-    ["queued", "running"].includes(job.status) ||
+    ["queued", "running", "archiving"].includes(job.status) ||
     queue.active?.job.id === job.id
   )
     throw new Error("running");
   if (!job.hasFiles) throw new Error("empty");
+  const { file } = await archivePath(queue, job);
+  if (!(await lstat(file)).isFile()) throw new Error("empty");
+  return file;
+}
+
+async function archivePath(queue, job) {
+  const root = await realpath(queue.settings.downloads);
+  const folder = await realpath(queue.folder(job));
+  if (!folder.startsWith(root + sep)) throw new Error("empty");
+  return { folder, file: join(folder, ".qws-archive.zip") };
+}
+
+export async function prepareArchive(queue, job) {
   if (pending.has(job.id)) return pending.get(job.id).promise;
   const task = { child: null, promise: null };
   task.promise = (async () => {
-    const root = await realpath(queue.settings.downloads);
-    const folder = await realpath(queue.folder(job));
-    if (!folder.startsWith(root + sep)) throw new Error("empty");
-    const file = join(folder, ".qws-archive.zip");
-    try {
-      if ((await stat(file)).isFile()) return file;
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
+    const { folder, file } = await archivePath(queue, job);
     await new Promise((done, reject) => {
+      if (queue.stopping) {
+        reject(new Error("stopping"));
+        return;
+      }
       const child = spawn(
         queue.settings.python,
         [resolve("scripts/archive.py"), folder],
         { stdio: "ignore" },
       );
       task.child = child;
-      const remaining = Date.parse(job.expiresAt) - Date.now();
       const timer = setTimeout(
         () => child.kill("SIGKILL"),
-        Math.max(1, Math.min(300_000, remaining)),
+        Math.max(1, Math.min(300_000, Date.parse(job.expiresAt) - Date.now())),
       );
       child.once("error", reject);
       child.once("close", (code) => {
@@ -42,7 +50,6 @@ export async function jobArchive(queue, job) {
         code === 0 ? done() : reject(new Error("build"));
       });
     });
-    if (queue.expired(job)) throw new Error("expired");
     return file;
   })().finally(() => pending.delete(job.id));
   pending.set(job.id, task);

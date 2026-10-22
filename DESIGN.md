@@ -29,11 +29,14 @@ Reference: https://developer.apple.com/design/human-interface-guidelines/
   code first, then registration; existing users can switch to login. No promotional
   explanations. Never display passwords or put invitation codes in URL parameters.
 
+Completed downloads are offered as ZIP archives; source tracks are temporary worker output.
+Administrator storage management must identify the archive and its owner before deletion.
+
 ## Interaction and motion
 
 - Prefer native form controls, keyboard submission, semantic buttons, and links.
 - Show loading and disabled states, prevent duplicate submissions, keep errors readable.
-- Confirm destructive user deletion in an accessible dialog with Cancel as the safe action.
+- Confirm destructive account or downloaded archive deletion in an accessible dialog with Cancel as the safe action.
 - Use brief opacity/transform transitions (about 150–250ms); ambient gradients move
   slowly. Respect `prefers-reduced-motion`; do not animate essential information.
 - Do not remove focus on navigation or leave focus inside a hidden dialog.

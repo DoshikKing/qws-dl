@@ -1,5 +1,4 @@
-import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { getQueue } from "../../../utils/queue.mjs";
 import { jobArchive, archiveFilename } from "../../../utils/archive.mjs";
 
@@ -18,7 +17,10 @@ export default defineEventHandler(async (event) => {
   try {
     file = await jobArchive(queue, job);
   } catch (error) {
-    const code = (error as Error).message;
+    const code =
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+        ? "empty"
+        : (error as Error).message;
     throw createError({
       statusCode:
         code === "expired"
@@ -30,7 +32,9 @@ export default defineEventHandler(async (event) => {
               : 500,
       statusMessage:
         code === "expired"
-          ? "Срок хранения истёк."
+          ? job.deletedAt
+            ? "Архив удалён администратором."
+            : "Срок хранения истёк."
           : code === "running"
             ? "Дождитесь завершения загрузки."
             : code === "empty"
@@ -38,15 +42,28 @@ export default defineEventHandler(async (event) => {
               : "Не удалось создать ZIP-архив.",
     });
   }
-  if (queue.expired(job))
+  let handle;
+  try {
+    handle = await open(file, "r");
+  } catch {
     throw createError({
-      statusCode: 410,
-      statusMessage: "Срок хранения истёк.",
+      statusCode: queue.expired(job) ? 410 : 404,
+      statusMessage: queue.expired(job) ? "Архив удалён." : "Архив не найден.",
     });
-  setResponseHeaders(event, {
-    "Content-Type": "application/zip",
-    "Content-Length": String((await stat(file)).size),
-    "Content-Disposition": `attachment; filename="qobuz-${job.id}.zip"; filename*=UTF-8''${encodeURIComponent(archiveFilename(job)).replace(/['()*]/g, (char) => "%" + char.charCodeAt(0).toString(16).toUpperCase())}`,
-  });
-  return sendStream(event, createReadStream(file));
+  }
+  if (queue.expired(job)) {
+    await handle.close();
+    throw createError({ statusCode: 410, statusMessage: "Архив удалён." });
+  }
+  try {
+    setResponseHeaders(event, {
+      "Content-Type": "application/zip",
+      "Content-Length": String((await handle.stat()).size),
+      "Content-Disposition": `attachment; filename="qobuz-${job.id}.zip"; filename*=UTF-8''${encodeURIComponent(archiveFilename(job)).replace(/['()*]/g, (char) => "%" + char.charCodeAt(0).toString(16).toUpperCase())}`,
+    });
+    return sendStream(event, handle.createReadStream());
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
 });

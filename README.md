@@ -3,10 +3,10 @@
 [Русская версия](README.ru.md) · [Setup and configuration](INFO.md)
 
 A Nuxt web interface for OrpheusDL and its Qobuz module. Queue media links,
-choose audio quality, view logs, cancel jobs, and download individual files or a ZIP.
+choose audio quality, view logs, cancel jobs, and download completed jobs as ZIP archives.
 Accounts are invitation-only; each user has a personal invite code and an invitation limit.
-The administrator manages accounts.
-Choose a file lifetime of **1–24 hours** per job; files and archives expire together.
+The administrator manages accounts and can delete downloads from Storage.
+Choose a file lifetime of **1–24 hours** per job; archives expire automatically. Source files are removed after ZIP verification.
 
 ## Disclaimer
 

@@ -37,11 +37,12 @@ async function refresh() {
   }
 }
 onMounted(refresh);
-function open(user: ManagedUser, value: typeof action.value) {
+async function open(user: ManagedUser, value: typeof action.value) {
   selected.value = user;
   action.value = value;
   password.value = "";
   error.value = "";
+  await nextTick();
   dialog.value?.showModal();
 }
 async function manage(user: ManagedUser, value: string) {

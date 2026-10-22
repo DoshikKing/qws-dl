@@ -6,7 +6,7 @@ node_modules/
 !.env.example
 .runtime/
 data/
-downloads/
+/downloads/
 test-results/
 playwright-report/
 __pycache__/

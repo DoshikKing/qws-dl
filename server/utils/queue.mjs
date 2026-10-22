@@ -8,8 +8,10 @@ import {
   renameSync,
   readdirSync,
   rmSync,
+  lstatSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
+import { prepareArchive } from "./archive.mjs";
 
 export const qualities = ["hifi", "lossless", "high"];
 export const requiredCredentials = ["QOBUZ_USERNAME", "QOBUZ_PASSWORD"];
@@ -155,7 +157,17 @@ export class DownloadQueue {
           ) +
             job.retentionHours * 3600_000,
         ).toISOString();
-        job.hasFiles = !job.expiredAt && this.hasFiles(job);
+        job.hasFiles = !job.expiredAt && !job.deletedAt && this.hasArchive(job);
+        if (
+          !this.expired(job) &&
+          !job.deletedAt &&
+          (this.hasFiles(job) || job.status === "archiving" || job.archiveError)
+        ) {
+          job.downloadStatus ||=
+            job.status === "archiving" ? "completed" : job.status;
+          job.status = "archiving";
+          job.hasFiles = false;
+        }
       }
     }
     this.save();
@@ -189,8 +201,9 @@ export class DownloadQueue {
     )
       throw new Error("Срок хранения: целое число от 1 до 24 часов.");
     if (
-      this.jobs.filter((job) => ["queued", "running"].includes(job.status))
-        .length >= 50
+      this.jobs.filter((job) =>
+        ["queued", "running", "archiving"].includes(job.status),
+      ).length >= 50
     )
       throw new Error("Очередь заполнена (50 заданий).");
     const job = {
@@ -231,7 +244,7 @@ export class DownloadQueue {
   }
 
   kill() {
-    if (!this.active) return;
+    if (!this.active?.child) return;
     const child = this.active.child;
     try {
       process.kill(-child.pid, "SIGTERM");
@@ -253,8 +266,12 @@ export class DownloadQueue {
     if (this.active || this.stopping) return;
     const job = [...this.jobs]
       .reverse()
-      .find((item) => item.status === "queued");
+      .find((item) => ["queued", "archiving"].includes(item.status));
     if (!job) return;
+    if (job.status === "archiving") {
+      this.finishArchive(job);
+      return;
+    }
     const ready = readiness(this.settings);
     if (!ready.ready) {
       job.status = "failed";
@@ -335,12 +352,66 @@ export class DownloadQueue {
         Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
       ).toISOString();
       job.title ||= this.readTitle(job);
-      job.hasFiles = this.hasFiles(job);
+      job.downloadStatus = job.status;
+      job.status = "archiving";
+      job.hasFiles = false;
+      this.save();
+      if (this.stopping) this.active = null;
+      else this.finishArchive(job);
+    });
+  }
+
+  async finishArchive(job) {
+    this.active = { job, child: null };
+    try {
+      if (!this.expired(job) && (this.hasFiles(job) || this.hasArchive(job)))
+        await prepareArchive(this, job);
+      delete job.archiveError;
+    } catch {
+      job.archiveError =
+        "Не удалось создать ZIP или удалить исходники. Файлы сохранены; повторите архивацию.";
+    } finally {
+      if (this.stopping) return; // Persist 'archiving' so startup safely resumes interrupted cleanup.
+      job.status = job.downloadStatus || "completed";
+      delete job.downloadStatus;
+      job.hasFiles =
+        !this.expired(job) && this.hasArchive(job) && !job.archiveError;
       this.active = null;
       this.save();
+      this.cleanupExpired();
       this.scheduleCleanup();
       this.pump();
-    });
+    }
+  }
+
+  retryArchive(job) {
+    if (this.expired(job) || job.deletedAt) throw new Error("expired");
+    if (
+      ["running", "queued", "archiving"].includes(job.status) ||
+      this.active?.job.id === job.id
+    )
+      throw new Error("busy");
+    job.downloadStatus = job.status;
+    job.status = "archiving";
+    job.hasFiles = false;
+    delete job.archiveError;
+    this.save();
+    this.pump();
+  }
+
+  deleteFiles(job) {
+    if (
+      ["running", "queued", "archiving"].includes(job.status) ||
+      this.active?.job.id === job.id
+    )
+      throw new Error("busy");
+    rmSync(this.folder(job), { recursive: true, force: true });
+    job.deletedAt = new Date().toISOString();
+    job.hasFiles = false;
+    delete job.archiveError;
+    delete job.cleanupError;
+    this.save();
+    this.scheduleCleanup();
   }
 
   close() {
@@ -401,9 +472,19 @@ export class DownloadQueue {
     }
   }
 
+  hasArchive(job) {
+    try {
+      return lstatSync(join(this.folder(job), ".qws-archive.zip")).isFile();
+    } catch {
+      return false;
+    }
+  }
+
   expired(job, now = Date.now()) {
     return Boolean(
-      job.expiredAt || (job.expiresAt && Date.parse(job.expiresAt) <= now),
+      job.deletedAt ||
+      job.expiredAt ||
+      (job.expiresAt && Date.parse(job.expiresAt) <= now),
     );
   }
 
@@ -430,8 +511,8 @@ export class DownloadQueue {
     this.jobs = this.jobs.filter(
       (job, index) =>
         index < 200 ||
-        ["running", "queued"].includes(job.status) ||
-        !job.expiredAt,
+        ["running", "queued", "archiving"].includes(job.status) ||
+        (!job.expiredAt && !job.deletedAt),
     );
   }
 
@@ -440,8 +521,9 @@ export class DownloadQueue {
     for (const job of this.jobs) {
       if (
         job.expiredAt ||
+        job.deletedAt ||
         !this.expired(job, now) ||
-        ["running", "queued"].includes(job.status)
+        ["running", "queued", "archiving"].includes(job.status)
       )
         continue;
       try {
@@ -470,7 +552,8 @@ export class DownloadQueue {
         (job) =>
           job.expiresAt &&
           !job.expiredAt &&
-          !["running", "queued"].includes(job.status),
+          !job.deletedAt &&
+          !["running", "queued", "archiving"].includes(job.status),
       )
       .map((job) =>
         job.cleanupError ? Date.now() + 60_000 : Date.parse(job.expiresAt),

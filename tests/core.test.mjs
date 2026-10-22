@@ -8,6 +8,8 @@ import {
   rm,
   chmod,
   access,
+  readdir,
+  readFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,7 +20,7 @@ import {
   readiness,
   authMode,
 } from "../server/utils/queue.mjs";
-import { safeFile, listFiles } from "../server/utils/files.mjs";
+import { jobArchive } from "../server/utils/archive.mjs";
 
 test("accepts Qobuz media links and rejects arbitrary hosts, credentials and CLI arguments", () => {
   assert.equal(
@@ -117,27 +119,6 @@ test("web readiness requires only account credentials; mobile mode requires app 
   }
 });
 
-test("file access stays inside downloads including symlinks; lists supported files", async () => {
-  const base = await mkdtemp(join(tmpdir(), "qws-files-"));
-  try {
-    const root = join(base, "downloads");
-    await mkdir(root);
-    await writeFile(join(root, "song.flac"), "audio");
-    await writeFile(join(base, "secret"), "private");
-    await symlink(join(base, "secret"), join(root, "escape.flac"));
-    assert.equal(await safeFile(root, "song.flac"), join(root, "song.flac"));
-    await assert.rejects(safeFile(root, "../secret"));
-    await assert.rejects(safeFile(root, "escape.flac"));
-    await assert.rejects(safeFile(root, root));
-    assert.deepEqual(
-      (await listFiles(root)).files.map((file) => file.name),
-      ["song.flac"],
-    );
-  } finally {
-    await rm(base, { recursive: true, force: true });
-  }
-});
-
 test("restart records interrupted jobs as failed and persists history", async () => {
   const base = await mkdtemp(join(tmpdir(), "qws-queue-"));
   try {
@@ -209,7 +190,7 @@ test("worker serializes processes, handles failures and cancels a running job", 
     const python = join(base, "python-shim");
     await writeFile(
       python,
-      `#!/bin/sh\nshift\nexec "${process.execPath}" "$@"\n`,
+      `#!/bin/sh\nif [ "$1" != "-u" ]; then exec python3 "$@"; fi\nshift\nexec "${process.execPath}" "$@"\n`,
     );
     await chmod(python, 0o700);
     queue = new DownloadQueue({
@@ -228,11 +209,9 @@ test("worker serializes processes, handles failures and cancels a running job", 
     assert.equal(first.status, "completed");
     assert.ok(!first.log.includes("test-secret"));
     assert.ok(!first.log.includes("https://"));
-    assert.ok(
-      (await listFiles(join(base, "downloads"))).files.some(
-        (file) => file.name === "test.flac",
-      ),
-    );
+    assert.equal(first.hasFiles, true);
+    assert.deepEqual(await readdir(queue.folder(first)), [".qws-archive.zip"]);
+    await assert.rejects(access(join(queue.folder(first), "test.flac")));
     const third = queue.add("https://open.qobuz.com/track/3", "high");
     assert.equal(third.status, "running");
     queue.cancel(third.id);
@@ -377,6 +356,117 @@ test("titles are restored from metadata and older album folders without exposing
     queue = new DownloadQueue(settings);
     queue.close();
     assert.equal(queue.jobs[0].title, "Артист - Альбом (версия)");
+  } finally {
+    queue?.close();
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test("archive-only migration resumes on startup; admin deletion preserves history and guards active jobs", async () => {
+  const base = await mkdtemp(join(tmpdir(), "qws-migrate-"));
+  let queue;
+  try {
+    const settings = {
+      data: join(base, "data"),
+      downloads: join(base, "downloads"),
+      python: "/usr/bin/python3",
+    };
+    queue = new DownloadQueue(settings);
+    queue.stopping = true;
+    const job = queue.add(
+      "https://open.qobuz.com/album/abc",
+      "hifi",
+      1,
+      "member",
+    );
+    job.status = "completed";
+    job.finishedAt = new Date().toISOString();
+    job.expiresAt = new Date(Date.now() + 3600000).toISOString();
+    await mkdir(join(queue.folder(job), "Альбом"), { recursive: true });
+    await writeFile(join(queue.folder(job), "Альбом/01. Трек.flac"), "audio");
+    queue.save();
+    queue.close();
+    queue = new DownloadQueue(settings);
+    assert.equal(queue.jobs[0].status, "archiving");
+    assert.throws(() => queue.deleteFiles(queue.jobs[0]), /busy/);
+    const end = Date.now() + 5000;
+    while (queue.jobs[0].status === "archiving" && Date.now() < end)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    const migrated = queue.jobs[0];
+    assert.equal(migrated.status, "completed");
+    assert.equal(migrated.hasFiles, true);
+    assert.deepEqual(await readdir(queue.folder(migrated)), [
+      ".qws-archive.zip",
+    ]);
+    assert.equal(
+      await jobArchive(queue, migrated),
+      join(queue.folder(migrated), ".qws-archive.zip"),
+    );
+    queue.deleteFiles(migrated);
+    assert.equal(migrated.hasFiles, false);
+    assert.ok(migrated.deletedAt);
+    assert.equal(queue.jobs.length, 1);
+    await assert.rejects(access(queue.folder(migrated)));
+    await assert.rejects(jobArchive(queue, migrated), /expired/);
+    await access(join(base, "data/jobs.json"));
+    assert.throws(
+      () => queue.deleteFiles({ id: "../data", status: "completed" }),
+      /Invalid/,
+    );
+    queue.close();
+    queue = new DownloadQueue(settings);
+    assert.ok(queue.jobs[0].deletedAt);
+    assert.equal(queue.jobs[0].hasFiles, false);
+  } finally {
+    queue?.close();
+    await rm(base, { recursive: true, force: true });
+  }
+});
+
+test("archive failures preserve originals and can be retried; serving rejects links outside downloads", async () => {
+  const base = await mkdtemp(join(tmpdir(), "qws-archive-failure-"));
+  let queue;
+  try {
+    const settings = {
+      data: join(base, "data"),
+      downloads: join(base, "downloads"),
+      python: "/missing-python",
+    };
+    queue = new DownloadQueue(settings);
+    queue.stopping = true;
+    const job = queue.add("https://open.qobuz.com/track/1", "hifi", 1);
+    job.status = "failed";
+    job.expiresAt = new Date(Date.now() + 3600000).toISOString();
+    await mkdir(queue.folder(job));
+    await writeFile(join(queue.folder(job), "song.flac"), "audio");
+    queue.stopping = false;
+    queue.retryArchive(job);
+    const until = async () => {
+      const end = Date.now() + 5000;
+      while (job.status === "archiving" && Date.now() < end)
+        await new Promise((resolve) => setTimeout(resolve, 20));
+    };
+    await until();
+    assert.ok(job.archiveError);
+    assert.equal(job.hasFiles, false);
+    assert.equal(
+      await readFile(join(queue.folder(job), "song.flac"), "utf8"),
+      "audio",
+    );
+    queue.settings.python = "/usr/bin/python3";
+    queue.retryArchive(job);
+    await until();
+    assert.equal(job.status, "failed");
+    assert.equal(job.archiveError, undefined);
+    assert.equal(job.hasFiles, true);
+    assert.deepEqual(await readdir(queue.folder(job)), [".qws-archive.zip"]);
+    await rm(join(queue.folder(job), ".qws-archive.zip"));
+    await writeFile(join(base, "private.zip"), "private");
+    await symlink(
+      join(base, "private.zip"),
+      join(queue.folder(job), ".qws-archive.zip"),
+    );
+    await assert.rejects(jobArchive(queue, job));
   } finally {
     queue?.close();
     await rm(base, { recursive: true, force: true });

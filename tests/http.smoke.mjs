@@ -9,6 +9,7 @@ import {
   rm,
   readFile,
   access,
+  readdir,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -207,12 +208,15 @@ else:
       );
       const library = await (await api("/api/files")).json();
       assert.equal(library.files.length, 1);
-      assert.equal(library.files[0].name, "Исполнитель - Название.flac");
+      assert.equal(library.files[0].name, "Исполнитель - Название.zip");
+      assert.deepEqual(await readdir(join(base, "downloads", first.id)), [
+        ".qws-archive.zip",
+      ]);
       const file = await api(
-        "/api/file?path=" + encodeURIComponent(library.files[0].path),
+        "/api/file?path=" +
+          encodeURIComponent(first.id + "/Исполнитель - Название.flac"),
       );
-      assert.equal(await file.text(), "fixture-audio");
-      assert.match(file.headers.get("content-disposition"), /attachment/);
+      assert.equal(file.status, 404);
       for (const hours of [0, 25, 1.5])
         assert.equal(
           (
@@ -272,6 +276,10 @@ else:
       );
       assert.equal(
         (await api(`/api/jobs/${cancelled.id}/archive`)).status,
+        409,
+      );
+      assert.equal(
+        (await api(`/api/admin/downloads/${cancelled.id}`, "DELETE")).status,
         409,
       );
       assert.equal(
@@ -350,7 +358,8 @@ else:
         assert.equal(
           (
             await api(
-              "/api/file?path=" + encodeURIComponent(library.files[0].path),
+              "/api/file?path=" +
+                encodeURIComponent(first.id + "/Исполнитель - Название.flac"),
             )
           ).status,
           404,
@@ -368,11 +377,19 @@ else:
         );
         assert.equal(own.userId, alice.id);
         assert.equal((await (await api("/api/files")).json()).files.length, 1);
-        const ownFile = (await (await api("/api/files")).json()).files[0];
+        assert.equal((await api("/api/admin/downloads")).status, 403);
         assert.equal(
-          (await api("/api/file?path=" + encodeURIComponent(ownFile.path)))
-            .status,
-          200,
+          (await api(`/api/admin/downloads/${own.id}`, "DELETE")).status,
+          403,
+        );
+        assert.equal(
+          (
+            await api(
+              "/api/file?path=" +
+                encodeURIComponent(own.id + "/Исполнитель - Название.flac"),
+            )
+          ).status,
+          404,
         );
         assert.equal((await api(`/api/jobs/${own.id}/archive`)).status, 200);
         const bobRegister = await api("/api/register", "POST", {
@@ -407,9 +424,36 @@ else:
         });
         assert.equal(adminCreated.status, 200);
         assert.equal((await api(`/api/jobs/${own.id}/archive`)).status, 404);
+        const storage = await (await api("/api/admin/downloads")).json();
+        assert.ok(
+          storage.files.some(
+            (file) => file.id === own.id && file.owner === "alice",
+          ),
+        );
         assert.equal(
-          (await api("/api/file?path=" + encodeURIComponent(ownFile.path)))
-            .status,
+          (await api(`/api/admin/downloads/${own.id}`, "DELETE")).status,
+          200,
+        );
+        await assert.rejects(access(join(base, "downloads", own.id)));
+        cookie = passwordChange.headers.get("set-cookie").split(";")[0];
+        assert.ok((await jobs()).find((job) => job.id === own.id).deletedAt);
+        assert.equal((await api(`/api/jobs/${own.id}/archive`)).status, 410);
+        assert.equal((await (await api("/api/files")).json()).files.length, 0);
+        cookie = adminCookie;
+        assert.equal(
+          (await (await api("/api/admin/downloads")).json()).files.some(
+            (file) => file.id === own.id,
+          ),
+          false,
+        );
+
+        assert.equal(
+          (
+            await api(
+              "/api/file?path=" +
+                encodeURIComponent(own.id + "/Исполнитель - Название.flac"),
+            )
+          ).status,
           404,
         );
         assert.equal(

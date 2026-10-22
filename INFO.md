@@ -77,9 +77,12 @@ Users change their own passwords in Settings. Password changes, resets, blocking
 and logout revoke the relevant sessions. Blocking/deletion also cancels that user's active jobs;
 remaining files expire on the existing schedule. Accounts cannot be promoted through registration.
 
-Each user sees and downloads only their own jobs, files and ZIPs, with ownership enforced
-in the API. The administrator's downloads view includes their own and pre-account legacy jobs/files,
-not other users' downloads. Qobuz credentials remain shared server configuration; app accounts
+Each user sees and downloads only their own jobs and ZIPs, with ownership enforced in the API.
+The administrator's regular downloads view includes their own and legacy jobs. The separate
+**Хранилище** view lists every user's archives and allows confirmed deletion, without granting
+cross-account download access. Deletion removes the job directory immediately, blocks subsequent
+download requests, and keeps history with a deletion marker. Active downloads/archiving cannot
+be deleted; cancel a download first and wait for packaging to finish. Qobuz credentials remain shared server configuration; app accounts
 are not Qobuz accounts or subscriptions.
 
 Accounts and salted scrypt password hashes are stored in `DATA_DIR/users.json` (mode 0600).
@@ -91,7 +94,7 @@ without trusting forwarded IP headers.
 
 For migration only, an existing `WEB_PASSWORD` supplies the administrator password if
 `ADMIN_PASSWORD` is absent, with login `admin` unless `ADMIN_USERNAME` is set. Move to the new
-variables; legacy password-only cookies are rejected. Existing files are preserved and remain
+variables; legacy password-only cookies are rejected. Existing job files are packaged into ZIPs on startup and remain
 available to the administrator until their retention expires. The old password must meet the
 new 10–256 character limit.
 
@@ -151,7 +154,7 @@ Select **1–24 hours** when adding a download. `DOWNLOAD_RETENTION_HOURS` suppl
 The retention clock starts when the job finishes, including failed/cancelled jobs with partial files.
 Each job uses a separate UUID directory. Its expiry time appears in the queue.
 Use the **ZIP** link in the queue or the archive card in the library to download the whole job.
-Individual file downloads remain available.
+Downloads are available only as ZIP archives; source files are never served through the file API.
 
 The queue and ZIP downloads use the artist and media title returned by OrpheusDL.
 Names appear once the worker fetches metadata; until then, the UI shows the media type and Qobuz ID.
@@ -159,13 +162,20 @@ New audio files include the artist and track title, with track numbers inside al
 ZIP names preserve Unicode. Existing files are not renamed; older job labels reuse their album folder
 or single audio filename when available.
 
-ZIP archives are built on demand, cached inside the job directory and use ZIP64 for large files.
-Audio is not recompressed, and the original folder structure is preserved.
-Archive creation ignores symlinks; an archive never includes itself.
-The cached archive can temporarily double the job's disk usage.
-Archives are available after the downloader has stopped, including partial files from failed jobs.
+After the downloader stops, the queue automatically creates a ZIP64 archive, verifies its contents
+and CRCs, and removes the originals, metadata sidecars and temporary files. Only the ZIP remains.
+Audio is not recompressed; folder structure, filenames, artwork and supplementary files are preserved.
+Symlinks are excluded and removed without following them. Packaging temporarily needs additional
+space for the ZIP before originals can be deleted. The queue shows **Создаётся ZIP** until completion;
+partial downloads from failed/cancelled jobs are archived as well.
 
-At expiry, the application removes the job's directory, including originals and its cached ZIP.
+If packaging or source cleanup fails, originals are kept where possible, the UI shows an error,
+and **Повторить архивацию** / **Повторить** retries without downloading again. A commit marker
+prevents an interrupted cleanup from replacing a full archive with the remaining subset of sources.
+On startup, unfinished packaging and unexpired legacy job folders are converted/resumed automatically.
+Manual directories that do not belong to recorded jobs are not modified or exposed by the archive UI.
+
+At expiry, the application removes the job directory and its ZIP (and any leftovers from failed cleanup).
 New download requests for expired files are rejected, and files disappear from the library.
 History is retained with an expiry marker. If deletion fails, the UI reports a permissions error
 and the server retries; expired files remain inaccessible through the API.
@@ -185,10 +195,10 @@ and tokens with restrictive permissions; the browser receives only setting-prese
 Logs are size-limited and redact configured secrets and URLs.
 
 One Python downloader processes jobs in order. Cancellation stops its process group;
-already written files remain available until expiry.
+already written files are packaged into a ZIP, available until expiry.
 After restart, interrupted jobs are marked failed and queued jobs resume.
 The queue accepts up to 50 active jobs. Recent history keeps 200 records plus unexpired jobs
-so file cleanup is not lost. The library displays up to 1000 individual files.
+so archive cleanup is not lost. The archive library lists retained downloads.
 OrpheusDL controls tagging and track availability. Detected individual-track failures mark
 the job failed even if upstream exits with code 0.
 The UI accepts media links; catalog search is not included.

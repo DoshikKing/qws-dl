@@ -11,14 +11,10 @@ type Job = {
   retentionHours: number;
   expiresAt?: string;
   expiredAt?: string;
+  deletedAt?: string;
+  archiveError?: string;
   hasFiles: boolean;
   cleanupError?: string;
-};
-type LibraryFile = {
-  path: string;
-  name: string;
-  size: number;
-  modifiedAt: string;
 };
 type Status = {
   installed: boolean;
@@ -42,10 +38,13 @@ type Account = {
 const account = ref<Account | null>(null);
 const views = computed(() => [
   { id: "queue", label: "Загрузки", icon: "queue" },
-  { id: "library", label: "Файлы", icon: "library" },
+  { id: "library", label: "Архивы", icon: "archive" },
   { id: "settings", label: "Настройки", icon: "settings" },
   ...(account.value?.role === "admin"
-    ? [{ id: "users", label: "Пользователи", icon: "users" }]
+    ? [
+        { id: "users", label: "Пользователи", icon: "users" },
+        { id: "storage", label: "Хранилище", icon: "library" },
+      ]
     : []),
 ]);
 const authenticated = ref(false);
@@ -69,26 +68,19 @@ const credentialNames = computed(() => [
     : []),
 ]);
 const jobs = ref<Job[]>([]);
-const files = ref<LibraryFile[]>([]);
-const truncated = ref(false);
 const selectedJob = ref<string | null>(null);
-const search = ref("");
 const activeJobs = computed(() =>
-  jobs.value.filter((job) => ["queued", "running"].includes(job.status)),
-);
-const filteredFiles = computed(() =>
-  files.value.filter((file) =>
-    `${file.path} ${fileJobTitle(file)}`
-      .toLowerCase()
-      .includes(search.value.toLowerCase()),
+  jobs.value.filter((job) =>
+    ["queued", "running", "archiving"].includes(job.status),
   ),
 );
 const availableArchives = computed(() =>
   jobs.value.filter(
     (job) =>
       job.hasFiles &&
-      !["running", "queued"].includes(job.status) &&
+      !["running", "queued", "archiving"].includes(job.status) &&
       !job.expiredAt &&
+      !job.deletedAt &&
       job.expiresAt &&
       Date.parse(job.expiresAt) > Date.now(),
   ),
@@ -104,14 +96,11 @@ const mediaType = (job: Job) =>
   mediaTypes[job.url.split("/")[3] || ""] || "Qobuz";
 const jobTitle = (job: Job) =>
   job.title || `${mediaType(job)} · ${job.url.split("/").pop()}`;
-const fileJobTitle = (file: LibraryFile) => {
-  const job = jobs.value.find((job) => job.id === file.path.split("/")[0]);
-  return job ? jobTitle(job) : "";
-};
 const archiveUrl = (job: Job) => `${baseURL}api/jobs/${job.id}/archive`;
 const labels: Record<string, string> = {
   queued: "В очереди",
   running: "Загружается",
+  archiving: "Создаётся ZIP",
   completed: "Готово",
   failed: "Ошибка",
   cancelled: "Отменено",
@@ -132,27 +121,19 @@ const date = (value: string) =>
     hour: "2-digit",
     minute: "2-digit",
   });
-const size = (bytes: number) =>
-  bytes < 1024 * 1024
-    ? `${(bytes / 1024).toFixed(0)} КБ`
-    : `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
-
 let sessionGeneration = 0;
 async function refresh() {
   const generation = sessionGeneration;
   try {
-    const [state, queue, library, profile] = await Promise.all([
+    const [state, queue, profile] = await Promise.all([
       api<Status>("/api/status"),
       api<Job[]>("/api/jobs"),
-      api<{ files: LibraryFile[]; truncated: boolean }>("/api/files"),
       api<Account>("/api/account"),
     ]);
     if (generation !== sessionGeneration) return;
     account.value = profile;
     status.value = state;
     jobs.value = queue;
-    files.value = library.files;
-    truncated.value = library.truncated;
     if (!authenticated.value) {
       quality.value = state.quality;
       retentionHours.value = state.retentionHours;
@@ -173,12 +154,11 @@ async function enterAccount() {
 }
 function clearAccount() {
   sessionGeneration++;
-  url.value = search.value = "";
+  url.value = "";
   selectedJob.value = null;
   authenticated.value = false;
   account.value = null;
   jobs.value = [];
-  files.value = [];
   status.value = null;
   tab.value = "queue";
   error.value = "";
@@ -217,6 +197,17 @@ async function cancel(job: Job) {
     await refresh();
   } catch (e) {
     error.value = message(e);
+  }
+}
+async function retryArchive(job: Job) {
+  busy.value = true;
+  try {
+    await api(`/api/jobs/${job.id}/archive`, { method: "POST" });
+    await refresh();
+  } catch (e) {
+    error.value = message(e);
+  } finally {
+    busy.value = false;
   }
 }
 let timer: ReturnType<typeof setInterval>;
@@ -264,9 +255,18 @@ onBeforeUnmount(() => clearInterval(timer));
             type="button"
             :class="{ selected: tab === view.id }"
             :aria-current="tab === view.id ? 'page' : undefined"
+            :aria-label="view.label"
             @click="tab = view.id"
           >
-            <AppIcon :name="view.icon" /><span>{{ view.label }}</span>
+            <AppIcon :name="view.icon" /><span
+              :class="{ 'nav-label-wide': view.id === 'users' }"
+              >{{ view.label }}</span
+            ><span
+              v-if="view.id === 'users'"
+              class="nav-label-compact"
+              aria-hidden="true"
+              >Аккаунты</span
+            >
             <span
               v-if="view.id === 'queue' && activeJobs.length"
               class="nav-count"
@@ -396,7 +396,7 @@ onBeforeUnmount(() => clearInterval(timer));
                       </button>
                     </div>
                     <p class="field-note">
-                      Файлы и ZIP удалятся через {{ retentionHours }} ч после
+                      ZIP удалится через {{ retentionHours }} ч после
                       завершения.
                     </p>
                   </form>
@@ -428,18 +428,20 @@ onBeforeUnmount(() => clearInterval(timer));
                       <div class="job-main">
                         <div class="item-icon" :data-status="job.status">
                           <span
-                            v-if="job.status === 'running'"
+                            v-if="['running', 'archiving'].includes(job.status)"
                             class="spinner"
                           /><AppIcon
                             v-else
                             :name="
-                              job.status === 'completed'
-                                ? 'check'
-                                : job.status === 'failed'
-                                  ? 'alert'
-                                  : job.status === 'cancelled'
-                                    ? 'close'
-                                    : 'download'
+                              job.archiveError
+                                ? 'alert'
+                                : job.status === 'completed'
+                                  ? 'check'
+                                  : job.status === 'failed'
+                                    ? 'alert'
+                                    : job.status === 'cancelled'
+                                      ? 'close'
+                                      : 'download'
                             "
                           />
                         </div>
@@ -459,9 +461,17 @@ onBeforeUnmount(() => clearInterval(timer));
                             }}<span>·</span>{{ date(job.createdAt) }}
                           </p>
                         </div>
-                        <span class="status-badge" :data-status="job.status">{{
-                          labels[job.status]
-                        }}</span>
+                        <span
+                          class="status-badge"
+                          :data-status="
+                            job.archiveError ? 'failed' : job.status
+                          "
+                          >{{
+                            job.archiveError
+                              ? "Ошибка архивации"
+                              : labels[job.status]
+                          }}</span
+                        >
                         <div class="job-actions">
                           <a
                             v-if="
@@ -475,6 +485,19 @@ onBeforeUnmount(() => clearInterval(timer));
                             download
                             ><AppIcon name="download" /><span>ZIP</span></a
                           >
+                          <button
+                            v-if="
+                              job.archiveError &&
+                              !job.deletedAt &&
+                              !job.expiredAt
+                            "
+                            type="button"
+                            class="quiet-button"
+                            :disabled="busy"
+                            @click="retryArchive(job)"
+                          >
+                            Повторить архивацию
+                          </button>
                           <button
                             type="button"
                             class="quiet-button"
@@ -500,15 +523,20 @@ onBeforeUnmount(() => clearInterval(timer));
                       </div>
                       <p class="job-retention">
                         {{
-                          job.expiredAt
-                            ? "Файлы удалены"
-                            : job.expiresAt
-                              ? `Доступны до ${date(job.expiresAt)}`
-                              : `Хранение после завершения: ${job.retentionHours} ч`
+                          job.deletedAt
+                            ? "Удалено администратором"
+                            : job.expiredAt
+                              ? "Архив удалён"
+                              : job.expiresAt
+                                ? `Доступны до ${date(job.expiresAt)}`
+                                : `Хранение после завершения: ${job.retentionHours} ч`
                         }}
                       </p>
                       <p v-if="job.cleanupError" class="job-error" role="alert">
                         {{ job.cleanupError }}
+                      </p>
+                      <p v-if="job.archiveError" class="job-error" role="alert">
+                        {{ job.archiveError }}
                       </p>
                       <p v-if="job.error" class="job-error" role="status">
                         {{ job.error }}
@@ -531,89 +559,15 @@ onBeforeUnmount(() => clearInterval(timer));
                 </section>
               </template>
 
-              <template v-else-if="tab === 'library'">
-                <section
-                  v-if="availableArchives.length"
-                  class="section first-section"
-                  aria-labelledby="archives-heading"
-                >
-                  <div class="section-heading">
-                    <h2 id="archives-heading">
-                      Архивы
-                      <span class="item-count">{{
-                        availableArchives.length
-                      }}</span>
-                    </h2>
-                  </div>
-                  <div class="panel file-list">
-                    <a
-                      v-for="job in availableArchives"
-                      :key="job.id"
-                      class="file-row archive-row"
-                      :href="archiveUrl(job)"
-                      download
-                      ><span class="item-icon"><AppIcon name="archive" /></span
-                      ><span class="item-description"
-                        ><strong class="item-title">{{ jobTitle(job) }}</strong
-                        ><span class="item-meta"
-                          >До {{ date(job.expiresAt!) }}</span
-                        ></span
-                      ><span class="file-action"
-                        >ZIP<AppIcon name="download" /></span
-                    ></a>
-                  </div>
-                </section>
-                <section
-                  class="section"
-                  :class="{ 'first-section': !availableArchives.length }"
-                  aria-labelledby="files-heading"
-                >
-                  <div class="section-heading files-heading">
-                    <h2 id="files-heading">
-                      Файлы <span class="item-count">{{ files.length }}</span>
-                    </h2>
-                    <div class="search-control">
-                      <AppIcon name="search" /><input
-                        v-model="search"
-                        type="search"
-                        aria-label="Поиск файлов"
-                        placeholder="Поиск"
-                      />
-                    </div>
-                  </div>
-                  <p class="section-note">
-                    Срок хранения — до 24 часов после завершения загрузки.
-                  </p>
-                  <p v-if="truncated" class="notice notice-warning">
-                    Показаны первые 1000 файлов.
-                  </p>
-                  <div v-if="!filteredFiles.length" class="empty-state">
-                    <AppIcon name="library" />
-                    <h3>{{ search ? "Ничего не найдено" : "Файлов нет" }}</h3>
-                    <p v-if="search">Измените запрос.</p>
-                  </div>
-                  <div v-else class="panel file-list">
-                    <a
-                      v-for="file in filteredFiles"
-                      :key="file.path"
-                      class="file-row"
-                      :href="`${baseURL}api/file?path=${encodeURIComponent(file.path)}`"
-                      download
-                      ><span class="item-icon"><AppIcon name="music" /></span
-                      ><span class="item-description"
-                        ><strong class="item-title">{{ file.name }}</strong
-                        ><span class="item-meta">{{
-                          file.path.split("/").slice(1, -1).join(" / ") ||
-                          fileJobTitle(file) ||
-                          "Файл"
-                        }}</span></span
-                      ><span class="file-size">{{ size(file.size) }}</span
-                      ><span class="file-action"
-                        ><AppIcon name="download" /></span
-                    ></a>
-                  </div>
-                </section>
-              </template>
+              <ArchiveLibrary
+                v-else-if="tab === 'library'"
+                @changed="refresh"
+              />
+              <ArchiveLibrary
+                v-else-if="tab === 'storage' && account?.role === 'admin'"
+                management
+                @changed="refresh"
+              />
 
               <UserManagement
                 v-else-if="tab === 'users' && account?.role === 'admin'"
@@ -708,8 +662,8 @@ onBeforeUnmount(() => clearInterval(timer));
                       </div>
                     </div>
                     <p class="section-note">
-                      Файлы и ZIP удаляются по истечении выбранного срока.
-                      История заданий сохраняется.
+                      ZIP удаляется по истечении выбранного срока. История
+                      заданий сохраняется.
                     </p>
                   </section>
                 </template>

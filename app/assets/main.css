@@ -610,7 +610,8 @@ code {
   width: 19px;
   height: 19px;
 }
-.item-icon[data-status="running"] {
+.item-icon[data-status="running"],
+.item-icon[data-status="archiving"] {
   color: var(--accent);
   background: var(--blue-fill);
 }
@@ -663,7 +664,8 @@ a.item-title:hover {
   color: var(--success);
   background: var(--success-fill);
 }
-.status-badge[data-status="running"] {
+.status-badge[data-status="running"],
+.status-badge[data-status="archiving"] {
   color: var(--accent);
   background: var(--blue-fill);
 }
@@ -1551,5 +1553,50 @@ a.item-title:hover {
   .account-dialog {
     background: Canvas;
     border-color: CanvasText;
+  }
+}
+
+.archive-item {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 20px;
+}
+.archive-item + .archive-item {
+  border-top: 1px solid var(--line);
+}
+.archive-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.delete-archive-name,
+.archive-notice {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .archive-item {
+    grid-template-columns: 32px minmax(0, 1fr);
+    padding: 16px;
+    gap: 10px;
+  }
+  .archive-actions {
+    grid-column: 2;
+    justify-content: flex-end;
+  }
+}
+
+.nav-label-compact {
+  display: none;
+}
+@media (max-width: 760px) {
+  .nav-label-wide {
+    display: none;
+  }
+  .nav-label-compact {
+    display: inline;
   }
 }
