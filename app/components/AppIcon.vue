@@ -10,6 +10,15 @@ const paths: Record<string, string> = {
   music:
     "M9 17V5l11-2v12M9 9l11-2M9 17a3 3 0 1 1-3-3 3 3 0 0 1 3 3M20 15a3 3 0 1 1-3-3 3 3 0 0 1 3 3",
   check: "m5 12 4 4L19 6",
+  lock: "M6 10h12v11H6zM8 10V6a4 4 0 0 1 8 0v4",
+  "arrow-right": "M5 12h14m-6-6 6 6-6 6",
+  plus: "M12 5v14M5 12h14",
+  close: "m6 6 12 12M18 6 6 18",
+  logout: "M9 4H4v16h5m5-13 5 5-5 5M9 12h11",
+  alert: "M12 8v5m0 3v.01M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20",
+  terminal: "m5 7 4 5-4 5m7 0h7",
+  archive: "M4 7h16v14H4zM3 3h18v4H3zM9 11h6",
+  search: "M16 16l5 5M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14",
 };
 </script>
 <template>

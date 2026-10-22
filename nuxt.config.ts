@@ -10,7 +10,7 @@ export default defineNuxtConfig({
       meta: [
         {
           name: "description",
-          content: "Личная библиотека загрузок Qobuz на OrpheusDL.",
+          content: "Веб-интерфейс OrpheusDL.",
         },
       ],
     },
