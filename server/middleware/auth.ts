@@ -1,6 +1,6 @@
-import { validSession } from "../utils/auth.mjs";
+import { accountStore } from "../utils/account";
 
-export default defineEventHandler((event) => {
+export default defineEventHandler(async (event) => {
   if (!event.path.startsWith("/api/")) return;
   setResponseHeader(event, "Cache-Control", "no-store");
   setResponseHeader(event, "X-Content-Type-Options", "nosniff");
@@ -12,19 +12,13 @@ export default defineEventHandler((event) => {
         statusMessage: "Недопустимый источник запроса.",
       });
   }
-  if (event.path.split("?")[0] === "/api/health") return;
-  if (!process.env.WEB_PASSWORD)
-    throw createError({
-      statusCode: 503,
-      statusMessage: "Задайте WEB_PASSWORD в .env и перезапустите сервер.",
-    });
-  if (event.path.split("?")[0] === "/api/login") return;
-  if (
-    !validSession(getCookie(event, "qws_session"), process.env.WEB_PASSWORD)
-  ) {
-    throw createError({
-      statusCode: 401,
-      statusMessage: "Войдите в интерфейс.",
-    });
-  }
+  const path = event.path.split("?")[0];
+  if (path === "/api/health") return;
+  const store = await accountStore();
+  if (["/api/login", "/api/register", "/api/invitations/check"].includes(path!))
+    return;
+  const user = store.session(getCookie(event, "qws_session"));
+  if (!user)
+    throw createError({ statusCode: 401, statusMessage: "Войдите в аккаунт." });
+  event.context.user = user;
 });

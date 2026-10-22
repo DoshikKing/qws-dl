@@ -6,13 +6,13 @@
 
 ```sh
 cp .env.example .env
-# Set WEB_PASSWORD, QOBUZ_USERNAME and QOBUZ_PASSWORD privately.
+# Set ADMIN_USERNAME, ADMIN_PASSWORD, QOBUZ_USERNAME and QOBUZ_PASSWORD privately.
 docker compose up -d --build
 docker compose logs -f
 ```
 
 The image installs Node.js, Python, FFmpeg, pinned OrpheusDL and the Qobuz module.
-It runs as an unprivileged user. Sign in to the web UI with `WEB_PASSWORD`.
+It runs as an unprivileged user. Choose **Sign in** and use `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
 By default, the published port is bound to `127.0.0.1:3000`.
 Use a TLS reverse proxy for remote access; `WEB_BIND` and `WEB_PORT` control the host binding.
 Run a single application instance: the queue and Orpheus session storage are shared.
@@ -37,7 +37,8 @@ When running `.output/server/index.mjs` directly, supply the environment yoursel
 
 | Variable                            | Meaning                                                                                            |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `WEB_PASSWORD`                      | Required web-interface password; without it the application API is closed                          |
+| `ADMIN_USERNAME`, `ADMIN_PASSWORD`  | Administrator login (default `admin`) and password (10–256 characters); created/synced on startup  |
+| `USER_INVITE_LIMIT`                 | Lifetime invite registrations per user, 0–10000; default 1; admin unlimited                        |
 | `QOBUZ_USERNAME`, `QOBUZ_PASSWORD`  | Your Qobuz email and original account password                                                     |
 | `QOBUZ_AUTH_MODE`                   | `web` by default; `token` reuses your browser session; `mobile` enables the legacy API integration |
 | `QOBUZ_USER_ID`, `QOBUZ_AUTH_TOKEN` | Your own browser account ID and auth token; only for `token` mode                                  |
@@ -52,6 +53,47 @@ When running `.output/server/index.mjs` directly, supply the environment yoursel
 
 Qobuz quality targets: `hifi` up to FLAC 192 kHz / 24-bit, `lossless` FLAC 44.1 kHz / 16-bit,
 and `high` MP3 320 kbit/s. Actual availability depends on Qobuz, the release, and your account.
+
+## Accounts and invitations
+
+Set `ADMIN_USERNAME=admin`, a private `ADMIN_PASSWORD` of 10–256 characters, and
+`USER_INVITE_LIMIT=1` in `.env`, then restart/recreate the application.
+The administrator account is created on startup. Updating its environment credentials
+updates the same account and revokes its sessions; its invitation code remains unchanged.
+Usernames contain 3–32 ASCII letters/digits, dots, underscores or hyphens and are case-insensitive.
+There is no public registration without a valid invitation.
+
+The initial screen accepts an invitation code; existing users, including the administrator,
+choose **Войти**. After validation, the invited person chooses a login and password.
+Settings show each user's invite code and remaining quota. Codes are reusable up to the
+lifetime quota: deleting an invited account does not restore it. `USER_INVITE_LIMIT` accepts
+0–10000, defaults to 1 and is read on restart. The administrator's code has no quota.
+Blocking or deleting an inviter also disables their code; existing invitees keep their accounts.
+
+The **Пользователи** administrator view lists accounts, inviter and usage, and supports
+blocking/unblocking, password reset, and confirmed account deletion. The bootstrap
+administrator cannot be deleted or blocked from the UI; manage its credentials via `.env`.
+Users change their own passwords in Settings. Password changes, resets, blocking, deletion,
+and logout revoke the relevant sessions. Blocking/deletion also cancels that user's active jobs;
+remaining files expire on the existing schedule. Accounts cannot be promoted through registration.
+
+Each user sees and downloads only their own jobs, files and ZIPs, with ownership enforced
+in the API. The administrator's downloads view includes their own and pre-account legacy jobs/files,
+not other users' downloads. Qobuz credentials remain shared server configuration; app accounts
+are not Qobuz accounts or subscriptions.
+
+Accounts and salted scrypt password hashes are stored in `DATA_DIR/users.json` (mode 0600).
+Opaque 12-hour session tokens use HttpOnly/SameSite=Strict cookies scoped to the app base path;
+only token hashes are persisted. Use TLS for Secure cookies. Keep this file/volume private and
+back it up with the rest of `DATA_DIR`. Run one Node process/replica: JSON persistence and the
+Orpheus worker are single-process. A global authentication/management attempt limit protects hashing
+without trusting forwarded IP headers.
+
+For migration only, an existing `WEB_PASSWORD` supplies the administrator password if
+`ADMIN_PASSWORD` is absent, with login `admin` unless `ADMIN_USERNAME` is set. Move to the new
+variables; legacy password-only cookies are rejected. Existing files are preserved and remain
+available to the administrator until their retention expires. The old password must meet the
+new 10–256 character limit.
 
 ## Qobuz web authentication
 
@@ -139,7 +181,7 @@ Compose stores history/session data in `app-data` (`/data`) and downloads in `do
 To export remaining files: `docker compose cp qws-dl:/downloads ./saved-downloads`.
 Locally, defaults are `data`, `downloads`, and `.runtime`.
 Do not publish `.env`, session data or private volumes. The worker writes Orpheus credentials
-and tokens with restrictive permissions; the browser receives setting-presence metadata only.
+and tokens with restrictive permissions; the browser receives only setting-presence metadata for Qobuz credentials.
 Logs are size-limited and redact configured secrets and URLs.
 
 One Python downloader processes jobs in order. Cancellation stops its process group;

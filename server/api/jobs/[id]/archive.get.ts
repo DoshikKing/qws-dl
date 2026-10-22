@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const job = queue.jobs.find(
     (item: { id: string }) => item.id === getRouterParam(event, "id"),
   );
-  if (!job)
+  if (!job || !queue.canAccess(job, event.context.user))
     throw createError({
       statusCode: 404,
       statusMessage: "Задание не найдено.",

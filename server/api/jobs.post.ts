@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
       body?.url,
       body?.quality || ready.quality,
       body?.retentionHours ?? ready.retentionHours,
+      event.context.user.id,
     );
   } catch (error) {
     throw createError({

@@ -1,6 +1,13 @@
 <script setup lang="ts">
 withDefaults(defineProps<{ name?: string }>(), { name: "download" });
 const paths: Record<string, string> = {
+  key: "M14 3a7 7 0 0 0-6.5 9.5L2 18v4h4v-3h3v-3l2-2A7 7 0 1 0 14 3m3 4v.01",
+  user: "M4 21v-2a8 8 0 0 1 16 0v2M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8",
+  users:
+    "M2 21v-2a6 6 0 0 1 12 0v2m2-8a6 6 0 0 1 6 6v2M8 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8m9 0a4 4 0 0 1 0 8",
+  shield: "m12 2 8 3v6c0 5-4 8-8 11-4-3-8-6-8-11V5zM8 12l3 3 5-6",
+  copy: "M8 8h13v13H8zM16 8V3H3v13h5",
+  trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7",
   download: "M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4",
   queue: "M4 5h16M4 12h12M4 19h8",
   library: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",

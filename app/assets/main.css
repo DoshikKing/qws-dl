@@ -181,11 +181,6 @@ code {
     transform: translate3d(11%, -8%, 0) scale(1.12) rotate(12deg);
   }
 }
-.password-form {
-  width: 340px;
-  max-width: 100%;
-  position: relative;
-}
 .password-control {
   display: flex;
   align-items: center;
@@ -256,21 +251,6 @@ code {
 .password-submit:disabled {
   background: #b9bdc8;
   opacity: 0.7;
-}
-.login-error {
-  position: absolute;
-  top: calc(100% + 18px);
-  left: 0;
-  right: 0;
-  padding: 12px 16px;
-  color: var(--danger);
-  font-size: 13px;
-  text-align: center;
-  line-height: 1.5;
-  background: rgb(255 255 255 / 78%);
-  border: 1px solid rgb(255 255 255 / 60%);
-  border-radius: 12px;
-  backdrop-filter: blur(20px);
 }
 
 /* Sidebar and toolbar follow desktop and mobile navigation conventions. */
@@ -1034,7 +1014,7 @@ a.item-title:hover {
   }
   .navigation {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(var(--nav-count, 3), minmax(0, 1fr));
     gap: 4px;
   }
   .navigation button {
@@ -1278,10 +1258,6 @@ a.item-title:hover {
   .password-submit:disabled {
     background: #666670;
   }
-  .login-error {
-    background: rgb(44 44 50 / 85%);
-    border-color: var(--line);
-  }
 }
 @media (prefers-color-scheme: dark) and (max-width: 760px) {
   .navigation button.selected {
@@ -1306,8 +1282,7 @@ a.item-title:hover {
     backdrop-filter: none;
     background: var(--canvas);
   }
-  .password-control,
-  .login-error {
+  .password-control {
     backdrop-filter: none;
     background: var(--panel);
   }
@@ -1332,7 +1307,6 @@ a.item-title:hover {
     display: none;
   }
   .password-control,
-  .login-error,
   .panel,
   .input-with-icon {
     background: Canvas;
@@ -1353,5 +1327,229 @@ a.item-title:hover {
     background: Canvas;
     color: CanvasText;
     border: 1px solid CanvasText;
+  }
+}
+
+/* Account flows follow DESIGN.md: factual copy, native forms and visible focus. */
+.auth-form {
+  width: 380px;
+  max-width: 100%;
+  position: relative;
+  margin: 32px 0;
+}
+.auth-switch {
+  display: block;
+  margin: 18px auto 0;
+  font-size: 14px;
+}
+.auth-card {
+  padding: 28px;
+  display: grid;
+  gap: 20px;
+  background: var(--panel);
+}
+.auth-card h1 {
+  font-size: 26px;
+}
+.auth-card .primary-button {
+  width: 100%;
+}
+.auth-card > .text-button {
+  justify-self: center;
+}
+.auth-error {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--danger);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.field > input,
+.invite-code-control > input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  background: var(--field);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.field > input:focus-visible,
+.invite-code-control > input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+.account-panel {
+  padding: 24px;
+}
+.control-label {
+  display: block;
+  font-weight: 500;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.invite-code-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.invite-code-control > input {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+.invite-code-control > button {
+  flex: 0 0 auto;
+}
+.password-settings {
+  display: grid;
+  gap: 18px;
+}
+.password-settings .field {
+  max-width: 440px;
+}
+.password-settings > button {
+  justify-self: start;
+}
+.form-error {
+  color: var(--danger);
+  font-size: 14px;
+}
+.form-success {
+  color: var(--success);
+  font-size: 14px;
+}
+.user-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+}
+.user-row + .user-row {
+  border-top: 1px solid var(--line);
+}
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.danger-button {
+  color: var(--danger);
+}
+.account-dialog {
+  color: var(--text);
+  background: var(--panel);
+  width: 440px;
+  max-width: calc(100% - 32px);
+  max-height: calc(100svh - 32px);
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 25%);
+}
+.account-dialog::backdrop {
+  background: rgb(0 0 0 / 38%);
+  backdrop-filter: blur(4px);
+}
+.account-dialog[open] {
+  animation: dialog-appear 0.18s ease;
+}
+.account-dialog form {
+  display: grid;
+  gap: 20px;
+}
+.account-dialog .section-note {
+  margin: 0;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.destructive-button {
+  background: #b42318;
+  color: #fff;
+}
+.destructive-button:hover:not(:disabled) {
+  background: #b42318;
+  filter: brightness(0.9);
+}
+@keyframes dialog-appear {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (max-width: 1100px) {
+  .user-row {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+  }
+  .user-actions {
+    grid-column: 2/-1;
+  }
+}
+@media (max-width: 760px) {
+  .auth-card {
+    padding: 24px;
+  }
+  .field > input,
+  .invite-code-control > input {
+    font-size: 16px;
+  }
+  .account-panel {
+    padding: 18px;
+  }
+  .invite-code-control {
+    flex-wrap: wrap;
+  }
+  .invite-code-control > button {
+    width: 100%;
+    justify-content: center;
+  }
+  .user-row {
+    padding: 16px;
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+  .user-row > .status-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .user-actions {
+    justify-content: flex-start;
+  }
+  .user-actions .quiet-button {
+    font-size: 12px;
+  }
+  .toolbar-service {
+    max-width: 45vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .account-dialog {
+    padding: 20px;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .account-dialog::backdrop {
+    backdrop-filter: none;
+  }
+}
+@media (forced-colors: active) {
+  .field > input,
+  .invite-code-control > input,
+  .account-dialog {
+    background: Canvas;
+    border-color: CanvasText;
   }
 }

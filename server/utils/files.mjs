@@ -1,7 +1,7 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import { resolve, relative, sep } from "node:path";
 
-export async function listFiles(root) {
+export async function listFiles(root, allowed = (_path) => true) {
   const files = [];
   async function walk(directory, depth) {
     if (depth > 15 || files.length >= 1000) return;
@@ -15,6 +15,7 @@ export async function listFiles(root) {
     for (const entry of entries) {
       if (files.length >= 1000) break;
       const path = resolve(directory, entry.name);
+      if (!allowed(relative(root, path).split(sep).join("/"))) continue;
       if (entry.isDirectory()) await walk(path, depth + 1);
       else if (
         entry.isFile() &&

@@ -18,11 +18,6 @@ import {
   readiness,
   authMode,
 } from "../server/utils/queue.mjs";
-import {
-  passwordMatches,
-  sessionToken,
-  validSession,
-} from "../server/utils/auth.mjs";
 import { safeFile, listFiles } from "../server/utils/files.mjs";
 
 test("accepts Qobuz media links and rejects arbitrary hosts, credentials and CLI arguments", () => {
@@ -46,26 +41,6 @@ test("accepts Qobuz media links and rejects arbitrary hosts, credentials and CLI
   ]) {
     assert.throws(() => normalizeUrl(bad));
   }
-});
-
-test("sessions expire, require the right password and reject altered signatures", () => {
-  const token = sessionToken("long-secret");
-  assert.ok(validSession(token, "long-secret"));
-  assert.ok(!validSession(token, "wrong-secret"));
-  assert.ok(!validSession(token + "a", "long-secret"));
-  assert.ok(
-    !validSession(
-      sessionToken("long-secret", Date.now() - 13 * 3600_000),
-      "long-secret",
-    ),
-  );
-  assert.ok(
-    !validSession(
-      sessionToken("long-secret", Date.now() + 60_000),
-      "long-secret",
-    ),
-  );
-  assert.ok(!passwordMatches("", ""));
 });
 
 test("redacts credentials and signed URLs from process logs", () => {

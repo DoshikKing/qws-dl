@@ -30,21 +30,31 @@ type Status = {
 };
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/?$/, "/");
 const api = $fetch.create({ baseURL });
-const passwordInput = ref<HTMLInputElement | null>(null);
-const views = [
+type Account = {
+  id: string;
+  username: string;
+  role: string;
+  inviteCode: string;
+  invitedCount: number;
+  inviteLimit: number | null;
+  invitesRemaining: number | null;
+};
+const account = ref<Account | null>(null);
+const views = computed(() => [
   { id: "queue", label: "Загрузки", icon: "queue" },
   { id: "library", label: "Файлы", icon: "library" },
   { id: "settings", label: "Настройки", icon: "settings" },
-];
+  ...(account.value?.role === "admin"
+    ? [{ id: "users", label: "Пользователи", icon: "users" }]
+    : []),
+]);
 const authenticated = ref(false);
 const checking = ref(true);
-const password = ref("");
-const loginError = ref("");
 const busy = ref(false);
 const error = ref("");
 const tab = ref("queue");
 const pageTitle = computed(
-  () => views.find((view) => view.id === tab.value)?.label || "Загрузки",
+  () => views.value.find((view) => view.id === tab.value)?.label || "Загрузки",
 );
 const url = ref("");
 const quality = ref("hifi");
@@ -127,13 +137,18 @@ const size = (bytes: number) =>
     ? `${(bytes / 1024).toFixed(0)} КБ`
     : `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
 
+let sessionGeneration = 0;
 async function refresh() {
+  const generation = sessionGeneration;
   try {
-    const [state, queue, library] = await Promise.all([
+    const [state, queue, library, profile] = await Promise.all([
       api<Status>("/api/status"),
       api<Job[]>("/api/jobs"),
       api<{ files: LibraryFile[]; truncated: boolean }>("/api/files"),
+      api<Account>("/api/account"),
     ]);
+    if (generation !== sessionGeneration) return;
+    account.value = profile;
     status.value = state;
     jobs.value = queue;
     files.value = library.files;
@@ -145,35 +160,33 @@ async function refresh() {
     authenticated.value = true;
     error.value = "";
   } catch (e: any) {
-    if (e.statusCode === 401) authenticated.value = false;
+    if (generation !== sessionGeneration) return;
+    if (e.statusCode === 401) clearAccount();
     else error.value = message(e);
   } finally {
     checking.value = false;
   }
 }
-async function login() {
-  busy.value = true;
-  loginError.value = "";
-  try {
-    await api("/api/login", {
-      method: "POST",
-      body: { password: password.value },
-    });
-    password.value = "";
-    await refresh();
-  } catch (e) {
-    loginError.value = message(e);
-  } finally {
-    busy.value = false;
-  }
+async function enterAccount() {
+  sessionGeneration++;
+  await refresh();
+}
+function clearAccount() {
+  sessionGeneration++;
+  url.value = search.value = "";
+  selectedJob.value = null;
+  authenticated.value = false;
+  account.value = null;
+  jobs.value = [];
+  files.value = [];
+  status.value = null;
+  tab.value = "queue";
+  error.value = "";
 }
 async function logout() {
   try {
     await api("/api/logout", { method: "POST" });
-    authenticated.value = false;
-    jobs.value = [];
-    files.value = [];
-    status.value = null;
+    clearAccount();
   } catch (e) {
     error.value = message(e);
   }
@@ -206,12 +219,6 @@ async function cancel(job: Job) {
     error.value = message(e);
   }
 }
-function focusPassword() {
-  if (!authenticated.value) passwordInput.value?.focus({ preventScroll: true });
-}
-watch(checking, (value) => {
-  if (!value) nextTick(focusPassword);
-});
 let timer: ReturnType<typeof setInterval>;
 let refreshing = false;
 onMounted(async () => {
@@ -230,49 +237,14 @@ onBeforeUnmount(() => clearInterval(timer));
 </script>
 
 <template>
-  <Transition name="screen" mode="out-in" @after-enter="focusPassword">
+  <Transition name="screen" mode="out-in">
     <main v-if="!authenticated" key="login" class="login-screen">
       <div class="login-background" aria-hidden="true"><i /><i /><i /></div>
-      <form class="password-form" aria-label="Вход" @submit.prevent="login">
-        <div
-          class="password-control"
-          :class="{ 'has-error': loginError || error }"
-        >
-          <AppIcon name="lock" />
-          <input
-            id="password"
-            ref="passwordInput"
-            v-model="password"
-            aria-label="Пароль"
-            :aria-invalid="Boolean(loginError)"
-            :aria-describedby="loginError || error ? 'login-error' : undefined"
-            type="password"
-            autocomplete="current-password"
-            placeholder="Пароль"
-            required
-            :disabled="checking"
-          />
-          <button
-            type="submit"
-            class="password-submit"
-            aria-label="Войти"
-            :disabled="busy || checking || !password"
-          >
-            <span v-if="busy || checking" class="spinner" aria-hidden="true" />
-            <AppIcon v-else name="arrow-right" />
-          </button>
-        </div>
-        <Transition name="notice"
-          ><p
-            v-if="loginError || error"
-            id="login-error"
-            class="login-error"
-            role="alert"
-          >
-            {{ loginError || error }}
-          </p></Transition
-        >
-      </form>
+      <AuthScreen
+        :checking="checking"
+        :error="error"
+        @authenticated="enterAccount"
+      />
     </main>
 
     <div v-else key="application" class="app-shell">
@@ -281,7 +253,11 @@ onBeforeUnmount(() => clearInterval(timer));
           <span class="app-mark"><AppIcon name="download" /></span
           ><span>QWS<small>OrpheusDL</small></span>
         </a>
-        <nav class="navigation" aria-label="Разделы">
+        <nav
+          class="navigation"
+          aria-label="Разделы"
+          :style="{ '--nav-count': views.length }"
+        >
           <button
             v-for="view in views"
             :key="view.id"
@@ -308,7 +284,7 @@ onBeforeUnmount(() => clearInterval(timer));
       <main class="main-content">
         <header class="toolbar">
           <span class="toolbar-title">QWS</span
-          ><span class="toolbar-service">Qobuz</span
+          ><span class="toolbar-service">{{ account?.username }}</span
           ><button type="button" class="toolbar-button" @click="logout">
             <AppIcon name="logout" /><span>Выйти</span>
           </button>
@@ -342,12 +318,18 @@ onBeforeUnmount(() => clearInterval(timer));
             <AppIcon name="alert" />
             <p>
               {{
-                status.installed
-                  ? "Qobuz не настроен."
-                  : "OrpheusDL не установлен."
+                account?.role !== "admin"
+                  ? "Загрузки недоступны. Обратитесь к администратору."
+                  : status.installed
+                    ? "Qobuz не настроен."
+                    : "OrpheusDL не установлен."
               }}
             </p>
-            <button class="text-button" @click="tab = 'settings'">
+            <button
+              v-if="account?.role === 'admin'"
+              class="text-button"
+              @click="tab = 'settings'"
+            >
               Настройки
             </button>
           </div>
@@ -633,101 +615,104 @@ onBeforeUnmount(() => clearInterval(timer));
                 </section>
               </template>
 
+              <UserManagement
+                v-else-if="tab === 'users' && account?.role === 'admin'"
+              />
               <template v-else>
-                <section
-                  class="section first-section"
-                  aria-labelledby="qobuz-settings"
-                >
-                  <div class="section-heading">
-                    <h2 id="qobuz-settings">Qobuz</h2>
-                    <span
-                      class="status-badge"
-                      :data-status="status?.ready ? 'completed' : 'failed'"
-                      >{{ status?.ready ? "Настроен" : "Не настроен" }}</span
-                    >
-                  </div>
-                  <div class="panel settings-list">
-                    <div class="setting-row">
-                      <span>OrpheusDL и модуль Qobuz</span
-                      ><span
-                        class="setting-value"
-                        :class="{ 'value-success': status?.installed }"
-                        >{{
-                          status?.installed ? "Установлены" : "Не установлены"
-                        }}</span
+                <AccountSettings v-if="account" :account="account" />
+                <template v-if="account?.role === 'admin'">
+                  <section class="section" aria-labelledby="qobuz-settings">
+                    <div class="section-heading">
+                      <h2 id="qobuz-settings">Qobuz</h2>
+                      <span
+                        class="status-badge"
+                        :data-status="status?.ready ? 'completed' : 'failed'"
+                        >{{ status?.ready ? "Настроен" : "Не настроен" }}</span
                       >
                     </div>
-                    <div class="setting-row">
-                      <span>Способ входа</span
-                      ><span class="setting-value">{{
-                        status?.authMode === "mobile"
-                          ? "Мобильный API"
-                          : status?.authMode === "token"
-                            ? "Браузерная сессия"
-                            : "Email и пароль"
-                      }}</span>
-                    </div>
-                    <div
-                      v-for="name in credentialNames"
-                      :key="name"
-                      class="setting-row"
-                    >
-                      <code>{{ name }}</code
-                      ><span
-                        class="setting-value"
-                        :class="
-                          status?.missing.includes(name)
-                            ? 'value-warning'
-                            : 'value-success'
-                        "
-                        ><AppIcon
-                          :name="
-                            status?.missing.includes(name) ? 'alert' : 'check'
+                    <div class="panel settings-list">
+                      <div class="setting-row">
+                        <span>OrpheusDL и модуль Qobuz</span
+                        ><span
+                          class="setting-value"
+                          :class="{ 'value-success': status?.installed }"
+                          >{{
+                            status?.installed ? "Установлены" : "Не установлены"
+                          }}</span
+                        >
+                      </div>
+                      <div class="setting-row">
+                        <span>Способ входа</span
+                        ><span class="setting-value">{{
+                          status?.authMode === "mobile"
+                            ? "Мобильный API"
+                            : status?.authMode === "token"
+                              ? "Браузерная сессия"
+                              : "Email и пароль"
+                        }}</span>
+                      </div>
+                      <div
+                        v-for="name in credentialNames"
+                        :key="name"
+                        class="setting-row"
+                      >
+                        <code>{{ name }}</code
+                        ><span
+                          class="setting-value"
+                          :class="
+                            status?.missing.includes(name)
+                              ? 'value-warning'
+                              : 'value-success'
                           "
-                        />{{
-                          status?.missing.includes(name)
-                            ? "Не задано"
-                            : "Задано"
-                        }}</span
-                      >
+                          ><AppIcon
+                            :name="
+                              status?.missing.includes(name) ? 'alert' : 'check'
+                            "
+                          />{{
+                            status?.missing.includes(name)
+                              ? "Не задано"
+                              : "Задано"
+                          }}</span
+                        >
+                      </div>
                     </div>
-                  </div>
-                  <p class="section-note">
-                    Параметры задаются в <code>.env</code> на сервере. После
-                    изменения перезапустите приложение. Вход в Qobuz проверяется
-                    при загрузке.
-                  </p>
-                  <p v-if="status && !status.installed" class="section-note">
-                    Установка: <code>npm run setup:orpheus</code>.
-                  </p>
-                </section>
-                <section class="section" aria-labelledby="download-settings">
-                  <div class="section-heading">
-                    <h2 id="download-settings">Загрузки</h2>
-                  </div>
-                  <div class="panel settings-list">
-                    <div class="setting-row">
-                      <span>Качество по умолчанию</span
-                      ><span class="setting-value">{{
-                        qualities[status?.quality || "hifi"]
-                      }}</span>
+                    <p class="section-note">
+                      Параметры задаются в <code>.env</code> на сервере. После
+                      изменения перезапустите приложение. Вход в Qobuz
+                      проверяется при загрузке.
+                    </p>
+                    <p v-if="status && !status.installed" class="section-note">
+                      Установка: <code>npm run setup:orpheus</code>.
+                    </p>
+                  </section>
+                  <section class="section" aria-labelledby="download-settings">
+                    <div class="section-heading">
+                      <h2 id="download-settings">Загрузки</h2>
                     </div>
-                    <div class="setting-row">
-                      <span>Срок хранения по умолчанию</span
-                      ><span class="setting-value"
-                        >{{ status?.retentionHours || 24 }} ч</span
-                      >
+                    <div class="panel settings-list">
+                      <div class="setting-row">
+                        <span>Качество по умолчанию</span
+                        ><span class="setting-value">{{
+                          qualities[status?.quality || "hifi"]
+                        }}</span>
+                      </div>
+                      <div class="setting-row">
+                        <span>Срок хранения по умолчанию</span
+                        ><span class="setting-value"
+                          >{{ status?.retentionHours || 24 }} ч</span
+                        >
+                      </div>
+                      <div class="setting-row">
+                        <span>Обработка заданий</span
+                        ><span class="setting-value">По одному</span>
+                      </div>
                     </div>
-                    <div class="setting-row">
-                      <span>Обработка заданий</span
-                      ><span class="setting-value">По одному</span>
-                    </div>
-                  </div>
-                  <p class="section-note">
-                    Файлы и ZIP удаляются по истечении выбранного срока. История
-                    заданий сохраняется.
-                  </p>
-                </section>
+                    <p class="section-note">
+                      Файлы и ZIP удаляются по истечении выбранного срока.
+                      История заданий сохраняется.
+                    </p>
+                  </section>
+                </template>
               </template>
             </div>
           </Transition>

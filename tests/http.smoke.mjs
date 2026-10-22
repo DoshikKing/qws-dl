@@ -63,7 +63,9 @@ for (const [prefix, mode] of [
           NUXT_APP_BASE_URL: prefix,
           HOST: "127.0.0.1",
           PORT: String(port),
-          WEB_PASSWORD: "test-interface-password",
+          ADMIN_USERNAME: "admin",
+          ADMIN_PASSWORD: "test-interface-password",
+          USER_INVITE_LIMIT: "1",
           QOBUZ_USERNAME: mode === "web" ? "test-account" : "",
           QOBUZ_PASSWORD: mode === "web" ? "test-account-secret" : "",
           QOBUZ_AUTH_MODE: mode,
@@ -137,10 +139,16 @@ else:
       await start();
       assert.equal((await api("/api/jobs")).status, 401);
       assert.equal(
-        (await api("/api/login", "POST", { password: "wrong" })).status,
+        (
+          await api("/api/login", "POST", {
+            username: "admin",
+            password: "wrong",
+          })
+        ).status,
         401,
       );
       const login = await api("/api/login", "POST", {
+        username: "admin",
         password: "test-interface-password",
       });
       assert.equal(login.status, 200);
@@ -290,7 +298,213 @@ else:
       assert.equal((await (await api("/api/files")).json()).files.length, 0);
       assert.ok((await jobs()).find((job) => job.id === first.id).expiredAt);
       await assert.rejects(access(join(base, "downloads", first.id)));
-      await api("/api/logout", "POST");
+      if (prefix === "/" && mode === "web") {
+        const adminCookie = cookie;
+        const admin = await (await api("/api/account")).json();
+        assert.equal(admin.role, "admin");
+        assert.equal(admin.invitesRemaining, null);
+        assert.equal(
+          (
+            await api("/api/register", "POST", {
+              username: "noinvite",
+              password: "member-password",
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await api("/api/invitations/check", "POST", {
+              code: admin.inviteCode,
+            })
+          ).status,
+          200,
+        );
+        const register = await api("/api/register", "POST", {
+          inviteCode: admin.inviteCode,
+          username: "alice",
+          password: "member-password",
+          role: "admin",
+        });
+        assert.equal(register.status, 200);
+        cookie = register.headers.get("set-cookie").split(";")[0];
+        const aliceCookie = cookie;
+        const alice = await (await api("/api/account")).json();
+        assert.equal(alice.role, "user");
+        assert.equal(alice.invitesRemaining, 1);
+        assert.equal((await api("/api/admin/users")).status, 403);
+        assert.equal(
+          (
+            await api(`/api/admin/users/${admin.id}`, "PATCH", {
+              action: "delete",
+            })
+          ).status,
+          403,
+        );
+        assert.deepEqual(await jobs(), []);
+        assert.equal((await api(`/api/jobs/${first.id}/archive`)).status, 404);
+        assert.equal(
+          (await api(`/api/jobs/${first.id}`, "DELETE")).status,
+          404,
+        );
+        assert.equal(
+          (
+            await api(
+              "/api/file?path=" + encodeURIComponent(library.files[0].path),
+            )
+          ).status,
+          404,
+        );
+        const own = await (
+          await api("/api/jobs", "POST", {
+            url: "https://open.qobuz.com/track/1",
+            userId: admin.id,
+          })
+        ).json();
+        await until(
+          async () =>
+            (await jobs()).find((job) => job.id === own.id)?.status ===
+            "completed",
+        );
+        assert.equal(own.userId, alice.id);
+        assert.equal((await (await api("/api/files")).json()).files.length, 1);
+        const ownFile = (await (await api("/api/files")).json()).files[0];
+        assert.equal(
+          (await api("/api/file?path=" + encodeURIComponent(ownFile.path)))
+            .status,
+          200,
+        );
+        assert.equal((await api(`/api/jobs/${own.id}/archive`)).status, 200);
+        const bobRegister = await api("/api/register", "POST", {
+          inviteCode: alice.inviteCode,
+          username: "bob",
+          password: "member-password",
+        });
+        assert.equal(bobRegister.status, 200);
+        assert.equal(
+          (
+            await api("/api/register", "POST", {
+              inviteCode: alice.inviteCode,
+              username: "charlie",
+              password: "member-password",
+            })
+          ).status,
+          400,
+        );
+        const passwordChange = await api("/api/account/password", "POST", {
+          currentPassword: "member-password",
+          password: "new-member-password",
+        });
+        assert.equal(passwordChange.status, 200);
+        assert.equal((await api("/api/account")).status, 401);
+        cookie = passwordChange.headers.get("set-cookie").split(";")[0];
+        assert.equal((await api("/api/account")).status, 200);
+        cookie = adminCookie;
+        const adminCreated = await api("/api/register", "POST", {
+          inviteCode: admin.inviteCode,
+          username: "dave",
+          password: "member-password",
+        });
+        assert.equal(adminCreated.status, 200);
+        assert.equal((await api(`/api/jobs/${own.id}/archive`)).status, 404);
+        assert.equal(
+          (await api("/api/file?path=" + encodeURIComponent(ownFile.path)))
+            .status,
+          404,
+        );
+        assert.equal(
+          (
+            await api(`/api/admin/users/${admin.id}`, "PATCH", {
+              action: "disable",
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await api(`/api/admin/users/${alice.id}`, "PATCH", {
+              action: "disable",
+            })
+          ).status,
+          200,
+        );
+        cookie = aliceCookie;
+        assert.equal((await api("/api/account")).status, 401);
+        assert.equal(
+          (
+            await api("/api/login", "POST", {
+              username: "alice",
+              password: "new-member-password",
+            })
+          ).status,
+          401,
+        );
+        assert.equal(
+          (
+            await api("/api/invitations/check", "POST", {
+              code: alice.inviteCode,
+            })
+          ).status,
+          400,
+        );
+        cookie = adminCookie;
+        assert.equal(
+          (
+            await api(`/api/admin/users/${alice.id}`, "PATCH", {
+              action: "enable",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await api(`/api/admin/users/${alice.id}`, "PATCH", {
+              action: "password",
+              password: "reset-member-password",
+            })
+          ).status,
+          200,
+        );
+        const resetLogin = await api("/api/login", "POST", {
+          username: "alice",
+          password: "reset-member-password",
+        });
+        assert.equal(resetLogin.status, 200);
+        assert.equal(
+          (
+            await api(`/api/admin/users/${alice.id}`, "PATCH", {
+              action: "delete",
+            })
+          ).status,
+          200,
+        );
+        const users = await (await api("/api/admin/users")).json();
+        assert.equal(
+          users.some((user) => user.id === alice.id),
+          false,
+        );
+        assert.ok(!JSON.stringify(users).includes("passwordHash"));
+        cookie = resetLogin.headers.get("set-cookie").split(";")[0];
+        assert.equal((await api("/api/account")).status, 401);
+        cookie = adminCookie;
+        const replacement = await api("/api/register", "POST", {
+          inviteCode: admin.inviteCode,
+          username: "alice",
+          password: "replacement-password",
+        });
+        assert.equal(replacement.status, 200);
+        cookie = replacement.headers.get("set-cookie").split(";")[0];
+        assert.notEqual(
+          (await (await api("/api/account")).json()).id,
+          alice.id,
+        );
+        assert.deepEqual(await jobs(), []);
+        assert.equal((await (await api("/api/files")).json()).files.length, 0);
+        assert.equal((await api(`/api/jobs/${own.id}/archive`)).status, 404);
+        cookie = adminCookie;
+        assert.equal((await api("/api/logout", "POST")).status, 200);
+        assert.equal((await api("/api/account")).status, 401);
+      } else await api("/api/logout", "POST");
     } finally {
       await stop();
       await rm(base, { recursive: true, force: true });

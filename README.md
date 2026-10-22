@@ -4,6 +4,8 @@
 
 A Nuxt web interface for OrpheusDL and its Qobuz module. Queue media links,
 choose audio quality, view logs, cancel jobs, and download individual files or a ZIP.
+Accounts are invitation-only; each user has a personal invite code and an invitation limit.
+The administrator manages accounts.
 Choose a file lifetime of **1–24 hours** per job; files and archives expire together.
 
 ## Disclaimer
@@ -19,11 +21,11 @@ This project is not affiliated with or endorsed by Qobuz or the upstream project
 
 ```sh
 cp .env.example .env
-# Set WEB_PASSWORD, QOBUZ_USERNAME and QOBUZ_PASSWORD.
+# Set ADMIN_USERNAME, ADMIN_PASSWORD, QOBUZ_USERNAME and QOBUZ_PASSWORD.
 docker compose up -d --build
 ```
 
-Open port `3000` on the local host and sign in with `WEB_PASSWORD`.
+Open port `3000` on the local host, choose **Sign in**, and use `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
 Web authentication is the default: manual `app_id` / `app_secret` values are unnecessary.
 For a reverse proxy under `/dl/`, set `NUXT_APP_BASE_URL=/dl/` and use
 [the nginx location snippet](deploy/nginx-dl.conf).
@@ -44,3 +46,5 @@ local development, tests, troubleshooting, and known limitations.
 These components retain their own copyrights and licenses. This notice does not
 relicense upstream code. See [dependency and license details](INFO.md#dependencies-and-licenses)
 and the lockfiles for exact versions and transitive dependencies.
+
+UI development follows [DESIGN.md](DESIGN.md); repository instructions are in [AGENTS.md](AGENTS.md).

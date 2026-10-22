@@ -113,6 +113,7 @@ export function redact(text) {
     ...mobileCredentials,
     ...tokenCredentials,
     "WEB_PASSWORD",
+    "ADMIN_PASSWORD",
   ]) {
     const value = process.env[name];
     if (value) clean = clean.split(value).join("[REDACTED]");
@@ -173,7 +174,12 @@ export class DownloadQueue {
     renameSync(this.file + ".tmp", this.file);
   }
 
-  add(url, quality, retentionHours = this.settings.retentionHours || 24) {
+  add(
+    url,
+    quality,
+    retentionHours = this.settings.retentionHours || 24,
+    userId = null,
+  ) {
     url = normalizeUrl(url);
     if (!qualities.includes(quality)) throw new Error("Неизвестное качество.");
     if (
@@ -189,6 +195,7 @@ export class DownloadQueue {
       throw new Error("Очередь заполнена (50 заданий).");
     const job = {
       id: randomUUID(),
+      userId,
       url,
       quality,
       status: "queued",
@@ -398,6 +405,19 @@ export class DownloadQueue {
     return Boolean(
       job.expiredAt || (job.expiresAt && Date.parse(job.expiresAt) <= now),
     );
+  }
+
+  canAccess(job, user) {
+    return Boolean(
+      user &&
+      (job.userId === user.id || (!job.userId && user.role === "admin")),
+    );
+  }
+
+  canAccessPath(path, user) {
+    const id = path.split(/[\\/]/)[0];
+    const job = this.jobs.find((item) => item.id === id);
+    return job ? this.canAccess(job, user) : user?.role === "admin";
   }
 
   pathExpired(path) {

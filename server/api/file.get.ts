@@ -11,6 +11,10 @@ export default defineEventHandler(async (event) => {
   try {
     file = await safeFile(queue.settings.downloads, getQuery(event).path);
     if (
+      !queue.canAccessPath(
+        relative(await realpath(queue.settings.downloads), file),
+        event.context.user,
+      ) ||
       queue.pathExpired(
         relative(await realpath(queue.settings.downloads), file),
       )
