@@ -586,11 +586,7 @@ onBeforeUnmount(() => clearInterval(timer));
                           :id="`log-${job.id}`"
                           class="log-container"
                         >
-                          <pre
-                            class="log"
-                            tabindex="0"
-                            aria-label="Журнал задания"
-                            >{{ job.log || "Вывода пока нет." }}</pre>
+                          <JobLog :log="job.log" />
                         </div></Transition
                       >
                     </article>
