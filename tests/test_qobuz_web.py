@@ -18,9 +18,44 @@ sys.path.insert(0, str(ROOT / '.runtime/orpheusdl'))
 from qobuz_web import web_api_class, QobuzWebError
 from modules.qobuz.qobuz_api import Qobuz
 from search_qobuz import search_tracks
+from diagnose_qobuz import diagnose
 
 
 class WebLoginTest(unittest.TestCase):
+    def test_diagnostic_report_never_exposes_library_output_or_secrets(self):
+        for mode, expected in [('ok', 'ok'), ('401', 'login_rejected_401'), ('network', 'network_error')]:
+            with self.subTest(mode=mode):
+                self.mode = mode
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    report = diagnose()
+                self.assertEqual(report['result'], expected)
+                self.assertEqual(stdout.getvalue() + stderr.getvalue(), '')
+                encoded = json.dumps(report)
+                for secret in ['fixture@example.test', 'fixture-password', 'fixture-web-token',
+                               'fixture-valid-secret', 'private proxy details', hashlib.md5(b'fixture-password').hexdigest()]:
+                    self.assertNotIn(secret, encoded)
+                if mode == '401':
+                    self.assertIn({'stage': 'login', 'status': 401}, report['requests'])
+
+    def test_diagnostic_missing_credentials_does_not_send_requests(self):
+        with patch.dict(os.environ, {'QOBUZ_PASSWORD': ''}):
+            report = diagnose()
+        self.assertEqual(report['result'], 'configuration_error')
+        self.assertFalse(report['configured']['QOBUZ_PASSWORD'])
+        self.assertEqual(report['requests'], [])
+
+    def test_diagnostic_token_mode_and_unexpected_exception_are_safe(self):
+        with patch.dict(os.environ, {'QOBUZ_AUTH_MODE': 'token', 'QOBUZ_USER_ID': '12345',
+                                     'QOBUZ_AUTH_TOKEN': 'fixture-browser-token'}):
+            report = diagnose()
+        self.assertEqual(report['result'], 'ok')
+        self.assertNotIn('fixture-browser-token', json.dumps(report))
+        with patch.object(requests.sessions.Session, 'request', side_effect=RuntimeError('private secret body')):
+            report = diagnose()
+        self.assertEqual(report['result'], 'authentication_or_client_error')
+        self.assertNotIn('private secret body', json.dumps(report))
+
     def setUp(self):
         self.login_calls = 0
         self.mode = 'ok'

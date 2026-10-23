@@ -287,7 +287,34 @@ See each upstream distribution for full license/copyright notices.
 Pinned JavaScript dependencies are recorded in `package-lock.json`;
 Python dependencies are recorded in `requirements-orpheus.lock`.
 
-### Check password propagation without displaying it
+### Generate a safe login diagnostic report
+
+After pulling the latest code, run from the project directory:
+
+```sh
+docker compose build qws-dl
+docker compose run --rm --no-deps --entrypoint /opt/runtime/venv/bin/python qws-dl /app/scripts/diagnose_qobuz.py
+```
+
+This creates a temporary container using the current `.env`, even if the running
+application has older variables. Without Docker, install the runtime with
+`npm run setup:orpheus`, then run `npm run diagnose:qobuz`; Node loads `.env`
+without executing it as shell code. Existing environment variables take precedence.
+
+The script uses the application's selected authentication mode and reports only
+whether required variables exist, fixed request stages, HTTP status codes and a
+result category. It suppresses library output, response bodies and exception text;
+email, password, password hash, tokens, client keys and URLs are never printed.
+It does not change Orpheus configuration or download media. Web/token mode also
+checks signing through the client library's file-URL request, without fetching audio.
+
+Exit status is `0` on success and `1` on failure. `login_rejected_401` means the login
+request was rejected, not necessarily that the password is wrong; `network_error`
+indicates a transport failure, `dependencies_missing` an incomplete runtime, and
+`authentication_or_client_error` a client/discovery/subscription/signing failure.
+You can share the resulting JSON report for troubleshooting. Never share `.env`.
+
+### Compare the container password with hidden input
 
 If a fresh browser login succeeds, this local check compares the typed password with the
 container environment. Input is hidden; only the comparison result is printed:
