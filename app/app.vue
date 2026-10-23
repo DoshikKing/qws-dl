@@ -121,20 +121,22 @@ let sessionGeneration = 0;
 async function refresh() {
   const generation = sessionGeneration;
   try {
-    const [state, queue, profile] = await Promise.all([
+    const profile = await api<Account>("/api/account");
+    if (generation !== sessionGeneration) return;
+    const entering = !authenticated.value;
+    account.value = profile;
+    authenticated.value = true;
+    const [state, queue] = await Promise.all([
       api<Status>("/api/status"),
       api<Job[]>("/api/jobs"),
-      api<Account>("/api/account"),
     ]);
     if (generation !== sessionGeneration) return;
-    account.value = profile;
     status.value = state;
     jobs.value = queue;
-    if (!authenticated.value) {
+    if (entering) {
       quality.value = state.quality;
       retentionHours.value = state.retentionHours;
     }
-    authenticated.value = true;
     error.value = "";
   } catch (e: any) {
     if (generation !== sessionGeneration) return;
@@ -233,7 +235,11 @@ onBeforeUnmount(() => clearInterval(timer));
 
 <template>
   <Transition name="screen" mode="out-in">
-    <main v-if="!authenticated" key="login" class="login-screen">
+    <main v-if="checking" key="checking" class="startup-screen" aria-busy="true">
+      <span class="spinner" aria-hidden="true" />
+      <span role="status">Загрузка…</span>
+    </main>
+    <main v-else-if="!authenticated" key="login" class="login-screen">
       <div class="login-background" aria-hidden="true"><i /><i /><i /></div>
       <AuthScreen
         :checking="checking"
@@ -338,345 +344,347 @@ onBeforeUnmount(() => clearInterval(timer));
             </button>
           </div>
 
-          <Transition name="page" mode="out-in">
-            <div :key="tab" class="page-content">
-              <template v-if="tab === 'queue'">
-                <section
-                  class="panel compose-panel"
-                  aria-labelledby="new-download"
-                >
-                  <div class="compose-heading">
-                    <h2 id="new-download">Новая загрузка</h2>
-                    <div
-                      class="input-mode"
-                      role="group"
-                      aria-label="Способ добавления"
-                    >
-                      <button
-                        type="button"
-                        :aria-pressed="inputMode === 'link'"
-                        @click="inputMode = 'link'"
-                      >
-                        По ссылке</button
-                      ><button
-                        type="button"
-                        :aria-pressed="inputMode === 'search'"
-                        @click="inputMode = 'search'"
-                      >
-                        Поиск Qobuz
-                      </button>
-                    </div>
-                  </div>
-                  <form v-if="inputMode === 'link'" @submit.prevent="addJob">
-                    <div class="field">
-                      <label for="url">Ссылка Qobuz</label>
-                      <div class="input-with-icon">
-                        <AppIcon name="link" /><input
-                          id="url"
-                          v-model="url"
-                          type="url"
-                          placeholder="https://play.qobuz.com/album/…"
-                          required
-                          maxlength="2048"
-                          autocomplete="off"
-                        />
-                      </div>
-                    </div>
-                    <div class="form-options">
-                      <div class="field">
-                        <label for="quality">Качество</label
-                        ><select id="quality" v-model="quality">
-                          <option
-                            v-for="(label, value) in qualities"
-                            :key="value"
-                            :value="value"
-                          >
-                            {{ label }}
-                          </option>
-                        </select>
-                      </div>
-                      <div class="field">
-                        <label for="retention">Хранить файлы</label
-                        ><select id="retention" v-model.number="retentionHours">
-                          <option
-                            v-for="hours in 24"
-                            :key="hours"
-                            :value="hours"
-                          >
-                            {{ hours }} ч
-                          </option>
-                        </select>
-                      </div>
-                      <button
-                        class="primary-button"
-                        :disabled="busy || !status?.ready"
-                      >
-                        <span
-                          v-if="busy"
-                          class="spinner"
-                          aria-hidden="true"
-                        /><AppIcon v-else name="plus" />{{
-                          busy ? "Добавление…" : "Добавить в очередь"
-                        }}
-                      </button>
-                    </div>
-                    <p class="field-note">
-                      ZIP удалится через {{ retentionHours }} ч после
-                      завершения.
-                    </p>
-                  </form>
-                  <QobuzSearch
-                    v-else
-                    v-model:quality="quality"
-                    v-model:retention-hours="retentionHours"
-                    :qualities="qualities"
-                    :disabled="!status?.ready"
-                    @queued="refresh"
-                  />
-                </section>
-
-                <section class="section" aria-labelledby="queue-heading">
-                  <div class="section-heading">
-                    <h2 id="queue-heading">
-                      Задания <span class="item-count">{{ jobs.length }}</span>
-                    </h2>
-                  </div>
-                  <div v-if="!jobs.length" class="empty-state">
-                    <AppIcon name="queue" />
-                    <h3>Заданий нет</h3>
-                    <p>
-                      {{
-                        inputMode === "search"
-                          ? "Выберите треки и добавьте их в очередь."
-                          : "Добавьте ссылку Qobuz."
-                      }}
-                    </p>
-                  </div>
-                  <TransitionGroup
-                    v-else
-                    name="rows"
-                    tag="div"
-                    class="panel job-list"
+          <div class="view-frame">
+            <Transition name="view" @before-leave="(element) => element.setAttribute('inert', '')">
+              <div :key="tab" class="page-content">
+                <template v-if="tab === 'queue'">
+                  <section
+                    class="panel compose-panel"
+                    aria-labelledby="new-download"
                   >
-                    <article
-                      v-for="job in jobs"
-                      :key="job.id"
-                      class="job"
-                      :data-status="job.status"
-                    >
-                      <div class="job-main">
-                        <div class="item-icon" :data-status="job.status">
-                          <span
-                            v-if="['running', 'archiving'].includes(job.status)"
-                            class="spinner"
-                          /><AppIcon
-                            v-else
-                            :name="
-                              job.archiveError
-                                ? 'alert'
-                                : job.status === 'completed'
-                                  ? 'check'
-                                  : job.status === 'failed'
-                                    ? 'alert'
-                                    : job.status === 'cancelled'
-                                      ? 'close'
-                                      : 'download'
-                            "
+                    <div class="compose-heading">
+                      <h2 id="new-download">Новая загрузка</h2>
+                      <div
+                        class="input-mode"
+                        role="group"
+                        aria-label="Способ добавления"
+                      >
+                        <button
+                          type="button"
+                          :aria-pressed="inputMode === 'link'"
+                          @click="inputMode = 'link'"
+                        >
+                          По ссылке</button
+                        ><button
+                          type="button"
+                          :aria-pressed="inputMode === 'search'"
+                          @click="inputMode = 'search'"
+                        >
+                          Поиск Qobuz
+                        </button>
+                      </div>
+                    </div>
+                    <form v-if="inputMode === 'link'" @submit.prevent="addJob">
+                      <div class="field">
+                        <label for="url">Ссылка Qobuz</label>
+                        <div class="input-with-icon">
+                          <AppIcon name="link" /><input
+                            id="url"
+                            v-model="url"
+                            type="url"
+                            placeholder="https://play.qobuz.com/album/…"
+                            required
+                            maxlength="2048"
+                            autocomplete="off"
                           />
                         </div>
-                        <div class="item-description">
-                          <a
-                            class="item-title"
-                            :href="job.url"
-                            target="_blank"
-                            rel="noreferrer"
-                            >{{ jobTitle(job) }}</a
-                          >
-                          <p class="item-meta">
-                            {{ mediaType(job) }}<span>·</span
-                            >{{
-                              qualities[job.quality]?.split(" · ")[0] ||
-                              job.quality
-                            }}<span>·</span>{{ date(job.createdAt) }}
-                          </p>
-                        </div>
-                        <span
-                          class="status-badge"
-                          :data-status="
-                            job.archiveError ? 'failed' : job.status
-                          "
-                          >{{
-                            job.archiveError
-                              ? "Ошибка архивации"
-                              : labels[job.status]
-                          }}</span
-                        >
-                        <div class="job-actions">
-                          <a
-                            v-if="
-                              availableArchives.some(
-                                (item) => item.id === job.id,
-                              )
-                            "
-                            class="quiet-button"
-                            :href="archiveUrl(job)"
-                            :aria-label="`Скачать ZIP: ${jobTitle(job)}`"
-                            download
-                            ><AppIcon name="download" /><span>ZIP</span></a
-                          >
-                          <button
-                            v-if="
-                              job.archiveError &&
-                              !job.deletedAt &&
-                              !job.expiredAt
-                            "
-                            type="button"
-                            class="quiet-button"
-                            :disabled="busy"
-                            @click="retryArchive(job)"
-                          >
-                            Повторить архивацию
-                          </button>
-                          <button
-                            type="button"
-                            class="quiet-button"
-                            :aria-expanded="selectedJob === job.id"
-                            :aria-controls="`log-${job.id}`"
-                            @click="
-                              selectedJob =
-                                selectedJob === job.id ? null : job.id
-                            "
-                          >
-                            <AppIcon name="terminal" /><span>Журнал</span>
-                          </button>
-                          <button
-                            v-if="['queued', 'running'].includes(job.status)"
-                            type="button"
-                            class="icon-button cancel-button"
-                            :aria-label="`Отменить ${jobTitle(job)}`"
-                            @click="cancel(job)"
-                          >
-                            <AppIcon name="close" />
-                          </button>
-                        </div>
                       </div>
-                      <p class="job-retention">
+                      <div class="form-options">
+                        <div class="field">
+                          <label for="quality">Качество</label
+                          ><select id="quality" v-model="quality">
+                            <option
+                              v-for="(label, value) in qualities"
+                              :key="value"
+                              :value="value"
+                            >
+                              {{ label }}
+                            </option>
+                          </select>
+                        </div>
+                        <div class="field">
+                          <label for="retention">Хранить файлы</label
+                          ><select id="retention" v-model.number="retentionHours">
+                            <option
+                              v-for="hours in 24"
+                              :key="hours"
+                              :value="hours"
+                            >
+                              {{ hours }} ч
+                            </option>
+                          </select>
+                        </div>
+                        <button
+                          class="primary-button"
+                          :disabled="busy || !status?.ready"
+                        >
+                          <span
+                            v-if="busy"
+                            class="spinner"
+                            aria-hidden="true"
+                          /><AppIcon v-else name="plus" />{{
+                            busy ? "Добавление…" : "Добавить в очередь"
+                          }}
+                        </button>
+                      </div>
+                      <p class="field-note">
+                        ZIP удалится через {{ retentionHours }} ч после
+                        завершения.
+                      </p>
+                    </form>
+                    <QobuzSearch
+                      v-else
+                      v-model:quality="quality"
+                      v-model:retention-hours="retentionHours"
+                      :qualities="qualities"
+                      :disabled="!status?.ready"
+                      @queued="refresh"
+                    />
+                  </section>
+
+                  <section class="section" aria-labelledby="queue-heading">
+                    <div class="section-heading">
+                      <h2 id="queue-heading">
+                        Задания <span class="item-count">{{ jobs.length }}</span>
+                      </h2>
+                    </div>
+                    <div v-if="!jobs.length" class="empty-state">
+                      <AppIcon name="queue" />
+                      <h3>Заданий нет</h3>
+                      <p>
                         {{
-                          job.deletedAt
-                            ? "Удалено администратором"
-                            : job.expiredAt
-                              ? "Архив удалён"
-                              : job.expiresAt
-                                ? `Доступны до ${date(job.expiresAt)}`
-                                : `Хранение после завершения: ${job.retentionHours} ч`
+                          inputMode === "search"
+                            ? "Выберите треки и добавьте их в очередь."
+                            : "Добавьте ссылку Qobuz."
                         }}
                       </p>
-                      <p v-if="job.cleanupError" class="job-error" role="alert">
-                        {{ job.cleanupError }}
-                      </p>
-                      <p v-if="job.archiveError" class="job-error" role="alert">
-                        {{ job.archiveError }}
-                      </p>
-                      <p v-if="job.error" class="job-error" role="status">
-                        {{ job.error }}
-                      </p>
-                      <Transition name="disclosure"
-                        ><div
-                          v-if="selectedJob === job.id"
-                          :id="`log-${job.id}`"
-                          class="log-container"
-                        >
-                          <JobLog :log="job.log" />
-                        </div></Transition
+                    </div>
+                    <TransitionGroup
+                      v-else
+                      name="rows"
+                      tag="div"
+                      class="panel job-list"
+                    >
+                      <article
+                        v-for="job in jobs"
+                        :key="job.id"
+                        class="job"
+                        :data-status="job.status"
                       >
-                    </article>
-                  </TransitionGroup>
-                </section>
-              </template>
-
-              <ArchiveLibrary
-                v-else-if="tab === 'library'"
-                @changed="refresh"
-              />
-              <ArchiveLibrary
-                v-else-if="tab === 'storage' && account?.role === 'admin'"
-                management
-                @changed="refresh"
-              />
-
-              <UserManagement
-                v-else-if="tab === 'users' && account?.role === 'admin'"
-              />
-              <template v-else>
-                <AccountSettings v-if="account" :account="account" />
-                <template v-if="account?.role === 'admin'">
-                  <section class="section" aria-labelledby="qobuz-settings">
-                    <div class="section-heading">
-                      <h2 id="qobuz-settings">Qobuz</h2>
-                      <span
-                        class="status-badge"
-                        :data-status="status?.ready ? 'completed' : 'failed'"
-                        >{{ status?.ready ? "Настроен" : "Не настроен" }}</span
-                      >
-                    </div>
-                    <QobuzConnection :connected="status?.oauthConnected || false" :result="qobuzResult" :needs-login="status?.sessionNeedsLogin || false" />
-                    <div class="panel settings-list">
-                      <div class="setting-row">
-                        <span>OrpheusDL и модуль Qobuz</span
-                        ><span
-                          class="setting-value"
-                          :class="{ 'value-success': status?.installed }"
-                          >{{
-                            status?.installed ? "Установлены" : "Не установлены"
-                          }}</span
+                        <div class="job-main">
+                          <div class="item-icon" :data-status="job.status">
+                            <span
+                              v-if="['running', 'archiving'].includes(job.status)"
+                              class="spinner"
+                            /><AppIcon
+                              v-else
+                              :name="
+                                job.archiveError
+                                  ? 'alert'
+                                  : job.status === 'completed'
+                                    ? 'check'
+                                    : job.status === 'failed'
+                                      ? 'alert'
+                                      : job.status === 'cancelled'
+                                        ? 'close'
+                                        : 'download'
+                              "
+                            />
+                          </div>
+                          <div class="item-description">
+                            <a
+                              class="item-title"
+                              :href="job.url"
+                              target="_blank"
+                              rel="noreferrer"
+                              >{{ jobTitle(job) }}</a
+                            >
+                            <p class="item-meta">
+                              {{ mediaType(job) }}<span>·</span
+                              >{{
+                                qualities[job.quality]?.split(" · ")[0] ||
+                                job.quality
+                              }}<span>·</span>{{ date(job.createdAt) }}
+                            </p>
+                          </div>
+                          <span
+                            class="status-badge"
+                            :data-status="
+                              job.archiveError ? 'failed' : job.status
+                            "
+                            >{{
+                              job.archiveError
+                                ? "Ошибка архивации"
+                                : labels[job.status]
+                            }}</span
+                          >
+                          <div class="job-actions">
+                            <a
+                              v-if="
+                                availableArchives.some(
+                                  (item) => item.id === job.id,
+                                )
+                              "
+                              class="quiet-button"
+                              :href="archiveUrl(job)"
+                              :aria-label="`Скачать ZIP: ${jobTitle(job)}`"
+                              download
+                              ><AppIcon name="download" /><span>ZIP</span></a
+                            >
+                            <button
+                              v-if="
+                                job.archiveError &&
+                                !job.deletedAt &&
+                                !job.expiredAt
+                              "
+                              type="button"
+                              class="quiet-button"
+                              :disabled="busy"
+                              @click="retryArchive(job)"
+                            >
+                              Повторить архивацию
+                            </button>
+                            <button
+                              type="button"
+                              class="quiet-button"
+                              :aria-expanded="selectedJob === job.id"
+                              :aria-controls="`log-${job.id}`"
+                              @click="
+                                selectedJob =
+                                  selectedJob === job.id ? null : job.id
+                              "
+                            >
+                              <AppIcon name="terminal" /><span>Журнал</span>
+                            </button>
+                            <button
+                              v-if="['queued', 'running'].includes(job.status)"
+                              type="button"
+                              class="icon-button cancel-button"
+                              :aria-label="`Отменить ${jobTitle(job)}`"
+                              @click="cancel(job)"
+                            >
+                              <AppIcon name="close" />
+                            </button>
+                          </div>
+                        </div>
+                        <p class="job-retention">
+                          {{
+                            job.deletedAt
+                              ? "Удалено администратором"
+                              : job.expiredAt
+                                ? "Архив удалён"
+                                : job.expiresAt
+                                  ? `Доступны до ${date(job.expiresAt)}`
+                                  : `Хранение после завершения: ${job.retentionHours} ч`
+                          }}
+                        </p>
+                        <p v-if="job.cleanupError" class="job-error" role="alert">
+                          {{ job.cleanupError }}
+                        </p>
+                        <p v-if="job.archiveError" class="job-error" role="alert">
+                          {{ job.archiveError }}
+                        </p>
+                        <p v-if="job.error" class="job-error" role="status">
+                          {{ job.error }}
+                        </p>
+                        <Transition name="disclosure"
+                          ><div
+                            v-if="selectedJob === job.id"
+                            :id="`log-${job.id}`"
+                            class="log-container"
+                          >
+                            <JobLog :log="job.log" />
+                          </div></Transition
                         >
-                      </div>
-                      <div class="setting-row">
-                        <span>Способ входа</span><span class="setting-value">Сайт Qobuz</span>
-                      </div>
-                      <div v-if="status?.lastRefreshedAt" class="setting-row">
-                        <span>Сессия обновлена</span><span class="setting-value">{{ date(status.lastRefreshedAt) }}</span>
-                      </div>
-                    </div>
-                    <p class="section-note">
-                      Сессия обновляется автоматически. Если Qobuz запросит
-                      повторную проверку, войдите снова на сайте сервиса.
-                    </p>
-                    <p v-if="status && !status.installed" class="section-note">
-                      Установка: <code>npm run setup:orpheus</code>.
-                    </p>
-                  </section>
-                  <section class="section" aria-labelledby="download-settings">
-                    <div class="section-heading">
-                      <h2 id="download-settings">Загрузки</h2>
-                    </div>
-                    <div class="panel settings-list">
-                      <div class="setting-row">
-                        <span>Качество по умолчанию</span
-                        ><span class="setting-value">{{
-                          qualities[status?.quality || "hifi"]
-                        }}</span>
-                      </div>
-                      <div class="setting-row">
-                        <span>Срок хранения по умолчанию</span
-                        ><span class="setting-value"
-                          >{{ status?.retentionHours || 24 }} ч</span
-                        >
-                      </div>
-                      <div class="setting-row">
-                        <span>Обработка заданий</span
-                        ><span class="setting-value">По одному</span>
-                      </div>
-                    </div>
-                    <p class="section-note">
-                      ZIP удаляется по истечении выбранного срока. История
-                      заданий сохраняется.
-                    </p>
+                      </article>
+                    </TransitionGroup>
                   </section>
                 </template>
-              </template>
-            </div>
-          </Transition>
+
+                <ArchiveLibrary
+                  v-else-if="tab === 'library'"
+                  @changed="refresh"
+                />
+                <ArchiveLibrary
+                  v-else-if="tab === 'storage' && account?.role === 'admin'"
+                  management
+                  @changed="refresh"
+                />
+
+                <UserManagement
+                  v-else-if="tab === 'users' && account?.role === 'admin'"
+                />
+                <template v-else>
+                  <AccountSettings v-if="account" :account="account" />
+                  <template v-if="account?.role === 'admin'">
+                    <section class="section" aria-labelledby="qobuz-settings">
+                      <div class="section-heading">
+                        <h2 id="qobuz-settings">Qobuz</h2>
+                        <span
+                          class="status-badge"
+                          :data-status="status?.ready ? 'completed' : 'failed'"
+                          >{{ status?.ready ? "Настроен" : "Не настроен" }}</span
+                        >
+                      </div>
+                      <QobuzConnection :connected="status?.oauthConnected || false" :result="qobuzResult" :needs-login="status?.sessionNeedsLogin || false" />
+                      <div class="panel settings-list">
+                        <div class="setting-row">
+                          <span>OrpheusDL и модуль Qobuz</span
+                          ><span
+                            class="setting-value"
+                            :class="{ 'value-success': status?.installed }"
+                            >{{
+                              status?.installed ? "Установлены" : "Не установлены"
+                            }}</span
+                          >
+                        </div>
+                        <div class="setting-row">
+                          <span>Способ входа</span><span class="setting-value">Сайт Qobuz</span>
+                        </div>
+                        <div v-if="status?.lastRefreshedAt" class="setting-row">
+                          <span>Сессия обновлена</span><span class="setting-value">{{ date(status.lastRefreshedAt) }}</span>
+                        </div>
+                      </div>
+                      <p class="section-note">
+                        Сессия обновляется автоматически. Если Qobuz запросит
+                        повторную проверку, войдите снова на сайте сервиса.
+                      </p>
+                      <p v-if="status && !status.installed" class="section-note">
+                        Установка: <code>npm run setup:orpheus</code>.
+                      </p>
+                    </section>
+                    <section class="section" aria-labelledby="download-settings">
+                      <div class="section-heading">
+                        <h2 id="download-settings">Загрузки</h2>
+                      </div>
+                      <div class="panel settings-list">
+                        <div class="setting-row">
+                          <span>Качество по умолчанию</span
+                          ><span class="setting-value">{{
+                            qualities[status?.quality || "hifi"]
+                          }}</span>
+                        </div>
+                        <div class="setting-row">
+                          <span>Срок хранения по умолчанию</span
+                          ><span class="setting-value"
+                            >{{ status?.retentionHours || 24 }} ч</span
+                          >
+                        </div>
+                        <div class="setting-row">
+                          <span>Обработка заданий</span
+                          ><span class="setting-value">По одному</span>
+                        </div>
+                      </div>
+                      <p class="section-note">
+                        ZIP удаляется по истечении выбранного срока. История
+                        заданий сохраняется.
+                      </p>
+                    </section>
+                  </template>
+                </template>
+              </div>
+            </Transition>
+          </div>
         </div>
       </main>
     </div>

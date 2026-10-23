@@ -130,78 +130,86 @@ async function retry(file: Archive) {
     <p v-if="notice" class="section-note archive-notice" role="status">
       {{ notice }}
     </p>
-    <p v-if="loading" class="section-note" role="status">Загрузка…</p>
-    <div v-else-if="!filtered.length" class="empty-state">
-      <AppIcon name="archive" />
-      <h3>{{ search ? "Ничего не найдено" : "Архивов нет" }}</h3>
-    </div>
-    <div v-else class="panel archive-list">
-      <article
-        v-for="file in filtered"
-        :key="file.id"
-        class="archive-item"
-        :aria-label="file.name"
-      >
-        <div class="item-icon">
-          <span v-if="file.status === 'archiving'" class="spinner" /><AppIcon
-            v-else
-            name="archive"
-          />
+    <div class="collection-content" :aria-busy="loading">
+      <Transition name="collection" mode="out-in">
+        <div v-if="loading" key="loading" class="collection-loading" role="status">
+          <span class="spinner" aria-hidden="true" />Загрузка…
         </div>
-        <div class="item-description">
-          <a
-            v-if="
-              !management && file.status !== 'archiving' && !file.archiveError
-            "
-            class="item-title"
-            :href="`${baseURL}api/jobs/${file.id}/archive`"
-            :aria-label="`Скачать ${file.name}`"
-            download
-            >{{ file.name }}</a
-          >
-          <h3 v-else class="item-title">{{ file.name }}</h3>
-          <p v-if="file.owner" class="item-meta">{{ file.owner }}</p>
-          <p class="item-meta">
-            {{
-              file.status === "archiving"
-                ? "Создаётся ZIP"
-                : file.archiveError
-                  ? "Ошибка архивации"
-                  : size(file.size)
-            }}<span>·</span>До {{ date(file.expiresAt) }}
-          </p>
-          <p v-if="file.archiveError" class="form-error" role="status">
-            {{ file.archiveError }}
-          </p>
+        <div v-else key="results">
+          <div v-if="!filtered.length" class="empty-state">
+            <AppIcon name="archive" />
+            <h3>{{ search ? "Ничего не найдено" : "Архивов нет" }}</h3>
+          </div>
+          <div v-else class="panel archive-list">
+            <article
+              v-for="file in filtered"
+              :key="file.id"
+              class="archive-item"
+              :aria-label="file.name"
+            >
+              <div class="item-icon">
+                <span v-if="file.status === 'archiving'" class="spinner" /><AppIcon
+                  v-else
+                  name="archive"
+                />
+              </div>
+              <div class="item-description">
+                <a
+                  v-if="
+                    !management && file.status !== 'archiving' && !file.archiveError
+                  "
+                  class="item-title"
+                  :href="`${baseURL}api/jobs/${file.id}/archive`"
+                  :aria-label="`Скачать ${file.name}`"
+                  download
+                  >{{ file.name }}</a
+                >
+                <h3 v-else class="item-title">{{ file.name }}</h3>
+                <p v-if="file.owner" class="item-meta">{{ file.owner }}</p>
+                <p class="item-meta">
+                  {{
+                    file.status === "archiving"
+                      ? "Создаётся ZIP"
+                      : file.archiveError
+                        ? "Ошибка архивации"
+                        : size(file.size)
+                  }}<span>·</span>До {{ date(file.expiresAt) }}
+                </p>
+                <p v-if="file.archiveError" class="form-error" role="status">
+                  {{ file.archiveError }}
+                </p>
+              </div>
+              <div class="archive-actions">
+                <button
+                  v-if="file.archiveError"
+                  class="quiet-button"
+                  :disabled="busy"
+                  @click="retry(file)"
+                >
+                  Повторить
+                </button>
+                <button
+                  v-if="management"
+                  class="icon-button danger-button"
+                  :aria-label="`Удалить ${file.name}`"
+                  :disabled="busy || file.status === 'archiving'"
+                  @click="confirmDelete(file)"
+                >
+                  <AppIcon name="trash" />
+                </button>
+                <a
+                  v-else-if="file.status !== 'archiving' && !file.archiveError"
+                  class="icon-button"
+                  :href="`${baseURL}api/jobs/${file.id}/archive`"
+                  :aria-label="`Скачать ZIP: ${file.name}`"
+                  download
+                  ><AppIcon name="download"
+                /></a>
+              </div>
+            </article>
+          </div>
         </div>
-        <div class="archive-actions">
-          <button
-            v-if="file.archiveError"
-            class="quiet-button"
-            :disabled="busy"
-            @click="retry(file)"
-          >
-            Повторить
-          </button>
-          <button
-            v-if="management"
-            class="icon-button danger-button"
-            :aria-label="`Удалить ${file.name}`"
-            :disabled="busy || file.status === 'archiving'"
-            @click="confirmDelete(file)"
-          >
-            <AppIcon name="trash" />
-          </button>
-          <a
-            v-else-if="file.status !== 'archiving' && !file.archiveError"
-            class="icon-button"
-            :href="`${baseURL}api/jobs/${file.id}/archive`"
-            :aria-label="`Скачать ZIP: ${file.name}`"
-            download
-            ><AppIcon name="download"
-          /></a>
-        </div>
-      </article>
+      </Transition>
     </div>
   </section>
   <dialog

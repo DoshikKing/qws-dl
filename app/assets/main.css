@@ -911,6 +911,59 @@ a.item-title:hover {
 }
 
 /* Motion supports context changes, and never runs against system preferences. */
+.startup-screen {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+}
+.view-frame {
+  position: relative;
+  min-height: 280px;
+}
+.view-enter-active {
+  transition: opacity 0.2s ease-out, transform 0.2s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.view-leave-active {
+  position: absolute;
+  inset: 0 0 auto;
+  pointer-events: none;
+  transition: opacity 0.12s ease-out;
+}
+.view-enter-from {
+  opacity: 0;
+  transform: translateY(3px);
+}
+.view-leave-to {
+  opacity: 0;
+}
+.collection-content {
+  min-height: 200px;
+}
+.collection-loading {
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.collection-enter-active {
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out;
+}
+.collection-leave-active {
+  transition: opacity 0.1s ease-out;
+}
+.collection-enter-from {
+  opacity: 0;
+  transform: translateY(2px);
+}
+.collection-leave-to {
+  opacity: 0;
+}
 .screen-enter-active,
 .screen-leave-active {
   transition: opacity 0.24s ease;

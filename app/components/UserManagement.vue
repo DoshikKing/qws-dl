@@ -93,64 +93,72 @@ async function manage(user: ManagedUser, value: string) {
       {{ error }}
     </p>
     <p v-if="notice" class="section-note" role="status">{{ notice }}</p>
-    <p v-if="loading" class="section-note" role="status">Загрузка…</p>
-    <div v-else-if="!filtered.length" class="empty-state">
-      <AppIcon name="users" />
-      <h3>Никого не найдено</h3>
-    </div>
-    <div v-else class="panel user-list">
-      <article
-        v-for="user in filtered"
-        :key="user.id"
-        class="user-row"
-        :aria-label="user.username"
-      >
-        <div class="item-icon">
-          <AppIcon :name="user.role === 'admin' ? 'shield' : 'user'" />
+    <div class="collection-content" :aria-busy="loading">
+      <Transition name="collection" mode="out-in">
+        <div v-if="loading" key="loading" class="collection-loading" role="status">
+          <span class="spinner" aria-hidden="true" />Загрузка…
         </div>
-        <div class="item-description">
-          <h3 class="item-title">{{ user.username }}</h3>
-          <p class="item-meta">
-            {{ user.role === "admin" ? "Администратор" : "Пользователь"
-            }}<span>·</span
-            >{{ new Date(user.createdAt).toLocaleDateString("ru-RU") }}
-          </p>
-          <p class="item-meta">
-            Приглашено: {{ user.invitedCount
-            }}{{ user.inviteLimit === null ? "" : ` / ${user.inviteLimit}`
-            }}<template v-if="user.invitedBy"
-              ><span>·</span>Пригласил: {{ user.invitedBy }}</template
+        <div v-else key="results">
+          <div v-if="!filtered.length" class="empty-state">
+            <AppIcon name="users" />
+            <h3>Никого не найдено</h3>
+          </div>
+          <div v-else class="panel user-list">
+            <article
+              v-for="user in filtered"
+              :key="user.id"
+              class="user-row"
+              :aria-label="user.username"
             >
-          </p>
+              <div class="item-icon">
+                <AppIcon :name="user.role === 'admin' ? 'shield' : 'user'" />
+              </div>
+              <div class="item-description">
+                <h3 class="item-title">{{ user.username }}</h3>
+                <p class="item-meta">
+                  {{ user.role === "admin" ? "Администратор" : "Пользователь"
+                  }}<span>·</span
+                  >{{ new Date(user.createdAt).toLocaleDateString("ru-RU") }}
+                </p>
+                <p class="item-meta">
+                  Приглашено: {{ user.invitedCount
+                  }}{{ user.inviteLimit === null ? "" : ` / ${user.inviteLimit}`
+                  }}<template v-if="user.invitedBy"
+                    ><span>·</span>Пригласил: {{ user.invitedBy }}</template
+                  >
+                </p>
+              </div>
+              <span
+                class="status-badge"
+                :data-status="user.disabled ? 'failed' : 'completed'"
+                >{{ user.disabled ? "Заблокирован" : "Активен" }}</span
+              >
+              <div v-if="user.role !== 'admin'" class="user-actions">
+                <button
+                  class="quiet-button"
+                  :disabled="busy"
+                  @click="manage(user, user.disabled ? 'enable' : 'disable')"
+                >
+                  {{ user.disabled ? "Разблокировать" : "Заблокировать" }}</button
+                ><button
+                  class="quiet-button"
+                  :disabled="busy"
+                  @click="open(user, 'password')"
+                >
+                  Пароль</button
+                ><button
+                  class="icon-button danger-button"
+                  :aria-label="`Удалить ${user.username}`"
+                  :disabled="busy"
+                  @click="open(user, 'delete')"
+                >
+                  <AppIcon name="trash" />
+                </button>
+              </div>
+            </article>
+          </div>
         </div>
-        <span
-          class="status-badge"
-          :data-status="user.disabled ? 'failed' : 'completed'"
-          >{{ user.disabled ? "Заблокирован" : "Активен" }}</span
-        >
-        <div v-if="user.role !== 'admin'" class="user-actions">
-          <button
-            class="quiet-button"
-            :disabled="busy"
-            @click="manage(user, user.disabled ? 'enable' : 'disable')"
-          >
-            {{ user.disabled ? "Разблокировать" : "Заблокировать" }}</button
-          ><button
-            class="quiet-button"
-            :disabled="busy"
-            @click="open(user, 'password')"
-          >
-            Пароль</button
-          ><button
-            class="icon-button danger-button"
-            :aria-label="`Удалить ${user.username}`"
-            :disabled="busy"
-            @click="open(user, 'delete')"
-          >
-            <AppIcon name="trash" />
-          </button>
-        </div>
-      </article>
+      </Transition>
     </div>
   </section>
   <dialog
