@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
       });
   }
   const path = event.path.split("?")[0];
-  if (path === "/api/health") return;
+  if (path === "/api/health" || (/^\/api\/qobuz\/callback\/[a-f0-9]{64}$/.test(path!) && event.method === "GET")) return;
   const store = await accountStore();
   if (["/api/login", "/api/register", "/api/invitations/check"].includes(path!))
     return;

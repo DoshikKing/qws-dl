@@ -142,8 +142,19 @@ else:
         python,
         `#!${resolve(".runtime/venv/bin/python")}
 import os,sys,json
-if len(sys.argv)>1 and sys.argv[1].endswith('search_qobuz.py'):
+if len(sys.argv)>1 and sys.argv[1].endswith('qobuz_oauth.py'):
+    payload=json.load(sys.stdin)
+    if payload['action']=='prepare':
+        print(json.dumps({'appId':'123456789','privateKey':'fixture-key','secrets':['fixture-secret']}))
+    elif payload['code']=='fixture-code':
+        print(json.dumps({'userId':'777','authToken':'fixture-oauth-session'}))
+    else:
+        print(json.dumps({'error':'fixture-private-body'}));sys.exit(1)
+elif len(sys.argv)>1 and sys.argv[1].endswith('search_qobuz.py'):
     query, offset = sys.argv[3], int(sys.argv[4])
+    if query == 'oauth-session':
+        assert os.environ['QOBUZ_AUTH_MODE']=='token'
+        assert os.environ['QOBUZ_AUTH_TOKEN']=='fixture-oauth-session'
     if query == 'service-error':
         print(json.dumps({'error':'Fixture search unavailable'}));sys.exit(1)
     tracks = [{'id':'1','url':'https://open.qobuz.com/track/1','title':'Название','artist':'Исполнитель','album':'Альбом','duration':181,'streamable':True}]
@@ -154,6 +165,7 @@ else:
         { mode: 0o700 },
       );
       await start();
+      assert.equal((await api('/api/admin/qobuz/login', 'POST')).status, 401);
       assert.equal(
         (await api("/api/search", "POST", { query: "Песня" })).status,
         401,
@@ -348,6 +360,45 @@ else:
       assert.equal((await (await api("/api/files")).json()).files.length, 0);
       assert.ok((await jobs()).find((job) => job.id === first.id).expiredAt);
       await assert.rejects(access(join(base, "downloads", first.id)));
+      if (mode === 'web') {
+        const forbidden = await fetch(origin + '/api/admin/qobuz/login', {
+          method: 'POST', headers: { cookie, origin: 'https://other.example' },
+        });
+        assert.equal(forbidden.status, 403);
+        const begin = await api('/api/admin/qobuz/login', 'POST');
+        assert.equal(begin.status, 200);
+        const flowCookie = begin.headers.get('set-cookie').split(';')[0];
+        assert.ok(begin.headers.get('set-cookie').includes('SameSite=Lax'));
+        assert.ok(begin.headers.get('set-cookie').includes('HttpOnly'));
+        const flow = await begin.json();
+        assert.deepEqual(Object.keys(flow), ['url']);
+        const redirect = new URL(new URL(flow.url).searchParams.get('redirect_url'));
+        assert.ok((redirect.origin + redirect.pathname).startsWith(origin + '/api/qobuz/callback/'));
+        redirect.searchParams.set('code', 'fixture-code');
+        const invalid = await fetch(redirect, { redirect: 'manual' });
+        assert.equal(invalid.status, 303);
+        assert.ok(invalid.headers.get('location').endsWith('?qobuz=failed'));
+        await assert.rejects(access(join(base, 'data/qobuz-session.json')));
+        // Cross-site navigation lacks the Strict app cookie; the temporary Lax cookie binds it instead.
+        const callback = await fetch(redirect, { headers: { cookie: flowCookie }, redirect: 'manual' });
+        assert.equal(callback.status, 303);
+        assert.equal(callback.headers.get('referrer-policy'), 'no-referrer');
+        assert.equal(callback.headers.get('location'), prefix.replace(/\/?$/, '/') + '?qobuz=connected');
+        assert.ok(!JSON.stringify([...callback.headers]).includes('fixture-oauth-session'));
+        assert.equal((await (await api('/api/status')).json()).oauthConnected, true);
+        const replay = await fetch(redirect, { headers: { cookie: flowCookie }, redirect: 'manual' });
+        assert.ok(replay.headers.get('location').endsWith('?qobuz=failed'));
+        await stop();
+        await start();
+        assert.equal((await (await api('/api/status')).json()).oauthConnected, true);
+        assert.equal((await api('/api/search', 'POST', { query: 'oauth-session' })).status, 200);
+        const oauthJob = await (await api('/api/jobs', 'POST', { url: 'https://open.qobuz.com/track/1' })).json();
+        await until(async () => (await jobs()).find(job => job.id === oauthJob.id)?.status === 'completed');
+        assert.ok(!(await jobs()).find(job => job.id === oauthJob.id).log.includes('fixture-oauth-session'));
+        const oauthSettings = JSON.parse(await readFile(join(root, 'config/settings.json'), 'utf8'));
+        assert.equal(oauthSettings.modules.qobuz.username, '777');
+        assert.equal(oauthSettings.modules.qobuz.password, 'fixture-oauth-session');
+      } else assert.equal((await api('/api/admin/qobuz/login', 'POST')).status, 400);
       if (prefix === "/" && mode === "web") {
         const adminCookie = cookie;
         const admin = await (await api("/api/account")).json();
@@ -381,6 +432,7 @@ else:
         const aliceCookie = cookie;
         const alice = await (await api("/api/account")).json();
         assert.equal(alice.role, "user");
+        assert.equal((await api('/api/admin/qobuz/login', 'POST')).status, 403);
         assert.equal(
           (await api("/api/search", "POST", { query: "Песня" })).status,
           200,

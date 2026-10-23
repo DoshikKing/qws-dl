@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { resolve, join } from "node:path";
 import { prepareArchive } from "./archive.mjs";
+import { qobuzEnvironment, readQobuzSession } from "./qobuz-session.mjs";
 
 export const qualities = ["hifi", "lossless", "high"];
 export const requiredCredentials = ["QOBUZ_USERNAME", "QOBUZ_PASSWORD"];
@@ -93,7 +94,8 @@ export function readiness(settings = config()) {
     ...(mode === "token" ? tokenCredentials : requiredCredentials),
     ...(mode === "mobile" ? mobileCredentials : []),
   ];
-  const missing = required.filter((name) => !process.env[name]);
+  const oauthConnected = mode === 'web' && !!readQobuzSession(settings.data);
+  const missing = oauthConnected ? [] : required.filter((name) => !process.env[name]);
   const installed =
     existsSync(join(settings.root, "orpheus.py")) &&
     existsSync(join(settings.root, "modules/qobuz/interface.py")) &&
@@ -104,12 +106,14 @@ export function readiness(settings = config()) {
     ready: installed && missing.length === 0,
     quality: settings.quality,
     authMode: mode,
+    oauthConnected,
     retentionHours: settings.retentionHours || 24,
   };
 }
 
-export function redact(text) {
+export function redact(text, privateValues = []) {
   let clean = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+  for (const value of privateValues) if (value) clean = clean.split(value).join('[REDACTED]');
   for (const name of [
     ...requiredCredentials,
     ...mobileCredentials,
@@ -292,6 +296,7 @@ export class DownloadQueue {
     job.status = "running";
     job.startedAt = new Date().toISOString();
     this.save();
+    const environment = qobuzEnvironment(this.settings.data);
     const child = spawn(
       this.settings.python,
       ["-u", this.settings.runner, this.settings.root, job.url, job.quality],
@@ -299,7 +304,7 @@ export class DownloadQueue {
         cwd: this.settings.root,
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, DOWNLOAD_DIR: folder, PYTHONUNBUFFERED: "1" },
+        env: { ...environment, DOWNLOAD_DIR: folder, PYTHONUNBUFFERED: "1" },
       },
     );
     this.active = { child, job };
@@ -312,7 +317,7 @@ export class DownloadQueue {
         const lines = pending.split(/[\r\n]/);
         pending = lines.pop();
         if (lines.length) {
-          job.log = (job.log + redact(lines.join("\n")) + "\n").slice(-24000);
+          job.log = (job.log + redact(lines.join("\n"), [environment.QOBUZ_AUTH_TOKEN]) + "\n").slice(-24000);
           job.title ||= this.readTitle(job);
           this.save();
         }
@@ -320,7 +325,7 @@ export class DownloadQueue {
         if (pending.length > 64000) pending = "";
       });
       stream.on("end", () => {
-        if (pending) job.log = (job.log + redact(pending) + "\n").slice(-24000);
+        if (pending) job.log = (job.log + redact(pending, [environment.QOBUZ_AUTH_TOKEN]) + "\n").slice(-24000);
       });
     };
     consume(child.stdout);

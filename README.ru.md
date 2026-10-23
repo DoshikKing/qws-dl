@@ -21,12 +21,13 @@ QWS — **неофициальный веб-интерфейс и средств
 
 ```sh
 cp .env.example .env
-# Заполните ADMIN_USERNAME, ADMIN_PASSWORD, QOBUZ_USERNAME и QOBUZ_PASSWORD.
+# Заполните ADMIN_USERNAME и ADMIN_PASSWORD.
 docker compose up -d --build
 ```
 
 Откройте порт `3000` на локальном хосте и выберите «Войти», затем используйте `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
-Веб-вход включён по умолчанию: вручную искать `app_id` / `app_secret` не нужно.
+Затем откройте **Настройки → Qobuz → Войти в Qobuz** и введите email и пароль на сайте сервиса.
+Сессия сохраняется автоматически; копировать токен и искать ключи приложения не нужно.
 Для запуска под `/dl/` задайте `NUXT_APP_BASE_URL=/dl/` и используйте
 [блоки nginx](deploy/nginx-dl.conf).
 

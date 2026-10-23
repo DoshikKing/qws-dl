@@ -6,7 +6,7 @@
 
 ```sh
 cp .env.example .env
-# Set ADMIN_USERNAME, ADMIN_PASSWORD, QOBUZ_USERNAME and QOBUZ_PASSWORD privately.
+# Set ADMIN_USERNAME and ADMIN_PASSWORD privately.
 docker compose up -d --build
 docker compose logs -f
 ```
@@ -39,8 +39,8 @@ When running `.output/server/index.mjs` directly, supply the environment yoursel
 | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD`  | Administrator login (default `admin`) and password (10–256 characters); created/synced on startup  |
 | `USER_INVITE_LIMIT`                 | Lifetime invite registrations per user, 0–10000; default 1; admin unlimited                        |
-| `QOBUZ_USERNAME`, `QOBUZ_PASSWORD`  | Your Qobuz email and original account password                                                     |
-| `QOBUZ_AUTH_MODE`                   | `web` by default; `token` reuses your browser session; `mobile` enables the legacy API integration |
+| `QOBUZ_USERNAME`, `QOBUZ_PASSWORD`  | Legacy/mobile API email and original password; unnecessary for browser OAuth                                                     |
+| `QOBUZ_AUTH_MODE`                   | `web`: browser OAuth from admin settings; `token`: manual session; `mobile`: legacy API |
 | `QOBUZ_USER_ID`, `QOBUZ_AUTH_TOKEN` | Your own browser account ID and auth token; only for `token` mode                                  |
 | `QOBUZ_APP_ID`, `QOBUZ_APP_SECRET`  | Only required in `mobile` mode; ignored in `web` mode                                              |
 | `DOWNLOAD_QUALITY`                  | `hifi`, `lossless`, or `high`; defaults to `hifi`                                                  |
@@ -100,33 +100,52 @@ new 10–256 character limit.
 
 ## Qobuz web authentication
 
-```dotenv
-QOBUZ_AUTH_MODE=web
-QOBUZ_USERNAME=your-email@example.com
-QOBUZ_PASSWORD='your-original-password'
-```
+Set `QOBUZ_AUTH_MODE=web` (default). Sign into QWS as administrator, then open
+**Settings → Qobuz → Sign in to Qobuz**. Enter your email/password on Qobuz's own
+site and complete any requested verification. You return to QWS automatically.
+There is no token to copy, and no server-side browser or desktop is needed.
 
-Use the original Qobuz account password, not a precomputed hash or a Google/Apple password.
-Single quotes preserve `$` and `#` in Docker Compose `.env` files.
-The worker uses `qobuz-dl` to obtain web-client parameters, authenticate and validate streaming access;
-OrpheusDL continues handling downloaded files, cover art and tags.
-You do not need to find mobile application keys or delete existing volumes to migrate.
-Old `QOBUZ_APP_ID` / `QOBUZ_APP_SECRET` values are ignored in web mode and may be removed.
-The worker does not reuse a cached mobile token for web authentication.
+The legacy direct `user/login` password request started failing after Qobuz's
+April 2026 authentication changes. Current browser login uses OAuth/reCAPTCHA;
+changing the password hash or HTTP method does not restore that old protocol.
+See the upstream reports [qobuz-dl #329](https://github.com/vitiko98/qobuz-dl/issues/329),
+[OAuth integration #331](https://github.com/vitiko98/qobuz-dl/pull/331), and
+[streamrip #954](https://github.com/nathom/streamrip/issues/954).
+The application now exchanges the browser authorization code, validates the account,
+subscription and request signing, then saves the resulting session privately.
+This changes the authentication flow; unattended email/password-only API login is
+not restored. The service may require browser verification again when a session expires.
 
-Legacy mode remains available with `QOBUZ_AUTH_MODE=mobile` and your matching mobile app credentials.
-The server needs HTTPS access to `play.qobuz.com` for discovery, `www.qobuz.com` for API calls,
-and the media/cover destinations returned by Qobuz.
-Web-player changes may require an integration update.
-Errors distinguish rejected authentication (401), an ineligible subscription, networking and player parsing.
-A 401 alone does not establish an incorrect password. The login request uses a POST form;
-credentials and session tokens are not placed in its URL.
-A “Configured” UI status checks required settings and installed files; it does not prove successful login.
+`QOBUZ_USERNAME` and `QOBUZ_PASSWORD` are unnecessary for this flow. They remain
+available for legacy API compatibility/mobile mode. Neither the application nor
+its workers receive the password typed on Qobuz's website. Manual application keys
+are unnecessary; web-player parameters are discovered at runtime.
+
+The session is stored as `DATA_DIR/qobuz-session.json` with mode `0600`, in the
+existing persistent `app-data` volume in Docker. Search and download workers reuse
+it without restart. In `web` mode it takes precedence over legacy email/password
+fields. Explicit `token` and `mobile` modes keep their own configured credentials.
+Session tokens are never returned to the browser. On expiry, use the sign-in button
+again. Reauthentication replaces the saved Qobuz account for the whole server.
+
+Only administrators can start a connection. Callbacks require a ten-minute, single-use
+state and a separate HttpOnly SameSite=Lax flow cookie; the regular QWS session
+remains SameSite=Strict. The initiating admin session must still be valid when the
+exchange finishes. Restarting during login requires starting again.
+
+Keep your browser on the same external application origin throughout login. Under
+`/dl/`, set `NUXT_APP_BASE_URL=/dl/` and preserve Host and X-Forwarded-Proto at nginx.
+Use the updated [nginx snippet](deploy/nginx-dl.conf), which disables callback access
+logging so one-time codes are not recorded. Apply equivalent logging rules at any
+other reverse proxies. Only the Qobuz authorization page needs browser access to
+its verification services; the server needs HTTPS access to `play.qobuz.com` and
+`www.qobuz.com`, plus media/cover destinations for downloads. A suitable account and
+subscription are still required. Browser/bundle changes may require an integration update.
 
 ## When browser login works but password authentication returns 401
 
-First update the application: the web adapter now sends a POST form instead of qobuz-dl's legacy GET login.
-If Qobuz still rejects password authentication, you can explicitly reuse **your own** browser session:
+Use the sign-in button described above. If browser OAuth cannot complete in your deployment,
+you can explicitly reuse **your own** browser session:
 
 ```dotenv
 QOBUZ_AUTH_MODE=token
@@ -293,13 +312,14 @@ After pulling the latest code, run from the project directory:
 
 ```sh
 docker compose build qws-dl
-docker compose run --rm --no-deps --entrypoint /opt/runtime/venv/bin/python qws-dl /app/scripts/diagnose_qobuz.py
+docker compose run --rm --no-deps --entrypoint node qws-dl /app/scripts/diagnose-qobuz.mjs
 ```
 
 This creates a temporary container using the current `.env`, even if the running
 application has older variables. Without Docker, install the runtime with
 `npm run setup:orpheus`, then run `npm run diagnose:qobuz`; Node loads `.env`
 without executing it as shell code. Existing environment variables take precedence.
+In web mode, an automatically saved OAuth session is passed to the diagnostic as token mode.
 
 The script uses the application's selected authentication mode and reports only
 whether required variables exist, fixed request stages, HTTP status codes and a
@@ -314,10 +334,11 @@ indicates a transport failure, `dependencies_missing` an incomplete runtime, and
 `authentication_or_client_error` a client/discovery/subscription/signing failure.
 You can share the resulting JSON report for troubleshooting. Never share `.env`.
 
-If web login returns 401 despite a matching password, compare API request formats:
+The legacy request comparison remains available for protocol investigation. It does not
+restore Qobuz’s discontinued password flow; use browser sign-in to connect your account:
 
 ```sh
-docker compose run --rm --no-deps --entrypoint /opt/runtime/venv/bin/python qws-dl /app/scripts/diagnose_qobuz.py --compare-password-login
+docker compose run --rm --no-deps --entrypoint node qws-dl /app/scripts/diagnose-qobuz.mjs --compare-password-login
 # Without Docker:
 npm run diagnose:qobuz -- --compare-password-login
 ```

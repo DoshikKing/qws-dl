@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { resolve } from "node:path";
+import { qobuzEnvironment } from './qobuz-session.mjs';
 
 const running = new Map();
 export class SearchError extends Error {
@@ -32,7 +33,7 @@ export async function searchTracks(settings, userId, request) {
         request.query,
         String(request.offset),
       ],
-      { timeout: 45_000, killSignal: "SIGKILL", maxBuffer: 256 * 1024 },
+      { timeout: 45_000, killSignal: "SIGKILL", maxBuffer: 256 * 1024, env: qobuzEnvironment(settings.data) },
       (error, stdout) => {
         running.delete(userId);
         if (error?.killed) {

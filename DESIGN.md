@@ -41,6 +41,10 @@ Administrator storage management must identify the archive and its owner before 
   slowly. Respect `prefers-reduced-motion`; do not animate essential information.
 - Do not remove focus on navigation or leave focus inside a hidden dialog.
 
+Qobuz connection belongs in administrator settings. The sign-in button opens the
+service's own login page; credentials are entered there. After returning, show a
+short success or retry message without codes, tokens, or provider response bodies.
+
 ## Verification
 
 Build and type-check UI changes. Exercise affected flows in a browser, including

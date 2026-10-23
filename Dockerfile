@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY scripts ./scripts
+COPY server/utils/qobuz-session.mjs ./server/utils/qobuz-session.mjs
 COPY requirements-orpheus.lock ./
 RUN --mount=type=secret,id=build_ca \
     if [ -f /run/secrets/build_ca ]; then \

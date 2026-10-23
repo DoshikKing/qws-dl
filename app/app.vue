@@ -23,6 +23,7 @@ type Status = {
   quality: string;
   authMode: "web" | "mobile" | "token";
   retentionHours: number;
+  oauthConnected: boolean;
 };
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/?$/, "/");
 const api = $fetch.create({ baseURL });
@@ -60,10 +61,11 @@ const inputMode = ref<"link" | "search">("link");
 const quality = ref("hifi");
 const retentionHours = ref(24);
 const status = ref<Status | null>(null);
+const qobuzResult = ref('');
 const credentialNames = computed(() => [
   ...(status.value?.authMode === "token"
     ? ["QOBUZ_USER_ID", "QOBUZ_AUTH_TOKEN"]
-    : ["QOBUZ_USERNAME", "QOBUZ_PASSWORD"]),
+    : status.value?.authMode === 'mobile' ? ["QOBUZ_USERNAME", "QOBUZ_PASSWORD"] : []),
   ...(status.value?.authMode === "mobile"
     ? ["QOBUZ_APP_ID", "QOBUZ_APP_SECRET"]
     : []),
@@ -214,6 +216,14 @@ async function retryArchive(job: Job) {
 let timer: ReturnType<typeof setInterval>;
 let refreshing = false;
 onMounted(async () => {
+  const params = new URLSearchParams(window.location.search);
+  const outcome = params.get('qobuz');
+  if (outcome === 'connected' || outcome === 'failed') {
+    qobuzResult.value = outcome;
+    tab.value = 'settings';
+    params.delete('qobuz');
+    window.history.replaceState(null, '', window.location.pathname + (params.size ? '?' + params : '') + window.location.hash);
+  }
   await refresh();
   timer = setInterval(async () => {
     if (!authenticated.value || refreshing) return;
@@ -620,6 +630,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         >{{ status?.ready ? "Настроен" : "Не настроен" }}</span
                       >
                     </div>
+                    <QobuzConnection :connected="status?.oauthConnected || false" :result="qobuzResult" :mode="status?.authMode || 'web'" />
                     <div class="panel settings-list">
                       <div class="setting-row">
                         <span>OrpheusDL и модуль Qobuz</span
@@ -638,7 +649,7 @@ onBeforeUnmount(() => clearInterval(timer));
                             ? "Мобильный API"
                             : status?.authMode === "token"
                               ? "Браузерная сессия"
-                              : "Email и пароль"
+                              : "Сайт Qobuz"
                         }}</span>
                       </div>
                       <div
@@ -668,8 +679,8 @@ onBeforeUnmount(() => clearInterval(timer));
                     </div>
                     <p class="section-note">
                       Параметры задаются в <code>.env</code> на сервере. После
-                      изменения перезапустите приложение. Вход в Qobuz
-                      проверяется при загрузке.
+                      изменения перезапустите приложение. После входа на сайте
+                      сессия сохраняется автоматически. Если она истечёт, войдите снова.
                     </p>
                     <p v-if="status && !status.installed" class="section-note">
                       Установка: <code>npm run setup:orpheus</code>.

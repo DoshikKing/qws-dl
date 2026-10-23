@@ -19,9 +19,40 @@ from qobuz_web import web_api_class, QobuzWebError
 from modules.qobuz.qobuz_api import Qobuz
 from search_qobuz import search_tracks
 from diagnose_qobuz import diagnose, compare_password_login, PASSWORD_VARIANTS
+from qobuz_oauth import prepare, exchange
 
 
 class WebLoginTest(unittest.TestCase):
+    def test_oauth_code_exchange_validates_profile_and_signing(self):
+        context = prepare()
+        self.assertEqual(context['privateKey'], 'fixtureOauthKey')
+
+        def transport(session, method, url, **kwargs):
+            if url.endswith('/oauth/callback'):
+                self.assertEqual(session.headers['X-App-Id'], '123456789')
+                self.assertEqual(kwargs['params'], {'code': 'fixture-code', 'private_key': 'fixtureOauthKey', 'app_id': '123456789'})
+                self.assertEqual(kwargs['timeout'], 30)
+                self.assertNotEqual(kwargs.get('verify'), False)
+                return self.response(url, {'token': 'fixture-browser-token'})
+            if url.endswith('/user/login') and kwargs.get('data') == {'extra': 'partner'}:
+                self.assertEqual(session.headers['X-User-Auth-Token'], 'fixture-browser-token')
+                return self.response(url, {'user': {'id': 12345}})
+            return self.request(session, method, url, **kwargs)
+
+        with patch.dict(os.environ, {'QOBUZ_AUTH_MODE': 'token'}), patch.object(requests.sessions.Session, 'request', transport):
+            result = exchange(context, 'fixture-code')
+        self.assertEqual(result, {'userId': '12345', 'authToken': 'fixture-web-token'})
+        self.assertEqual(self.login_calls, 1)
+
+    def test_oauth_missing_player_key_or_code_is_rejected(self):
+        with patch('qobuz_oauth.Bundle') as bundle:
+            bundle.return_value._bundle = 'changed player'
+            with self.assertRaises(ValueError):
+                prepare()
+        for code in ['', 'x' * 8193, 'bad\ncode']:
+            with self.assertRaises(ValueError):
+                exchange({}, code)
+
     def test_password_comparison_checks_formats_and_stops_on_success(self):
         seen = []
 
@@ -141,7 +172,7 @@ class WebLoginTest(unittest.TestCase):
                 value = base64.b64encode(secret.encode()).decode() + 'A' * 44
                 chunks += [f'a.initialSeed("{value[:4]}",window.utimezone.{timezone})',
                            f'name:"Europe/{timezone.capitalize()}",info:"{value[4:12]}",extras:"{value[12:]}"']
-            return self.response(url, ';'.join(chunks))
+            return self.response(url, ';'.join(chunks) + ';privateKey:"fixtureOauthKey"')
         params = kwargs.get('data', {}) if url.endswith('/user/login') else kwargs.get('params', {})
         self.assertEqual(params.get('app_id', session.headers.get('X-App-Id')), '123456789')
         if url.endswith('/user/login'):

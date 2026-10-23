@@ -68,10 +68,11 @@ def web_api_class(legacy_api):
             except AuthenticationError:
                 raise QobuzWebError(
                     'Qobuz отклонил запрос авторизации (401). Это не доказывает ошибку пароля. '
-                    + ('Браузерная сессия могла истечь: обновите QOBUZ_AUTH_TOKEN и QOBUZ_USER_ID.'
-                       if token_mode else 'Если свежий вход на сайте работает, проверьте передачу .env '
-                       'в контейнер или используйте QOBUZ_AUTH_MODE=token со своей браузерной сессией; '
-                       'инструкция в INFO.ru.md.')
+                    + ('Браузерная сессия могла истечь: войдите снова через Настройки → Qobuz. '
+                       'В явном режиме token обновите QOBUZ_AUTH_TOKEN и QOBUZ_USER_ID.'
+                       if token_mode else 'Прямой парольный вход user/login больше не поддерживается '
+                       'текущим веб-клиентом Qobuz. Откройте Настройки → Qobuz → Войти в Qobuz '
+                       'и введите email и пароль на сайте сервиса.')
                 ) from None
             except IneligibleError:
                 raise QobuzWebError('У аккаунта Qobuz нет подписки с доступом к загрузкам.') from None
