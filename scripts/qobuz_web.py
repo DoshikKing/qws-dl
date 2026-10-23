@@ -98,6 +98,32 @@ def web_api_class(legacy_api):
         def get_file_url(self, track_id, quality_id=27):
             return self._connect().get_track_url(track_id, quality_id)
 
+        def _paged(self, endpoint, params, collection):
+            result = self._get(endpoint, {**params, 'limit': 500, 'offset': 0})
+            page = result[collection]
+            total = page['total']
+            if not isinstance(total, int) or not 0 <= total <= 10000:
+                raise QobuzWebError('Коллекция слишком большая или Qobuz вернул некорректный размер.')
+            items = list(page['items'])
+            identifiers = {str(item['id']) for item in items}
+            while len(items) < total:
+                following = self._get(endpoint, {**params, 'limit': 500, 'offset': len(items)})[collection]
+                batch = following['items']
+                if following['total'] != total or not batch or any(str(item['id']) in identifiers for item in batch):
+                    raise QobuzWebError('Коллекция изменилась или получена не полностью. Повторите загрузку.')
+                items.extend(batch)
+                identifiers.update(str(item['id']) for item in batch)
+            if len(items) != total or len(identifiers) != total:
+                raise QobuzWebError('Коллекция получена не полностью. Повторите загрузку.')
+            result[collection] = {**page, 'items': items}
+            return result
+
+        def get_playlist(self, playlist_id):
+            return self._paged('playlist/get', {'playlist_id': playlist_id, 'extra': 'tracks,subscribers,focusAll'}, 'tracks')
+
+        def get_artist(self, artist_id):
+            return self._paged('artist/get', {'artist_id': artist_id, 'extra': 'albums,playlists,tracks_appears_on,albums_with_last_release,focusAll'}, 'albums')
+
     return WebAPI
 
 

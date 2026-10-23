@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
-import { saveQobuzSession } from './qobuz-session.mjs';
+import { saveQobuzSession, workerEnvironment } from './qobuz-session.mjs';
 
 export const oauthLifetime = 600_000;
 const flows = new Map();
@@ -9,7 +9,7 @@ const children = new Set();
 export function oauthWorker(settings, payload) {
   return new Promise((done, reject) => {
     const child = execFile(settings.python, [resolve('scripts/qobuz_oauth.py')],
-      { timeout: 90_000, killSignal: 'SIGKILL', maxBuffer: 128 * 1024 }, (error, stdout) => {
+      { timeout: 90_000, killSignal: 'SIGKILL', maxBuffer: 128 * 1024, env: workerEnvironment() }, (error, stdout) => {
         children.delete(child);
         try {
           const value = JSON.parse(stdout);

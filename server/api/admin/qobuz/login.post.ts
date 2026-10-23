@@ -4,7 +4,7 @@ import { beginQobuzLogin, oauthLifetime } from '../../../utils/qobuz-oauth.mjs';
 
 export default defineEventHandler(async event => {
   requireAdmin(event);
-  limitAuth();
+  limitAuth(event);
   const settings = config();
   const base = useRuntimeConfig(event).app.baseURL.replace(/\/?$/, '/');
   const requestURL = getRequestURL(event, { xForwardedProto: true });

@@ -25,7 +25,7 @@ def create_archive(directory):
         # only the remaining subset of sources after some originals were removed.
         if not committed.exists():
             for folder, directories, files in os.walk(root, followlinks=False):
-                directories[:] = [name for name in directories if not Path(folder, name).is_symlink()]
+                directories[:] = [name for name in directories if not name.startswith('.qws-') and not Path(folder, name).is_symlink()]
                 for name in files:
                     path = Path(folder, name)
                     if not name.startswith('.qws-') and not path.is_symlink() and path.is_file():

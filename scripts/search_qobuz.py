@@ -51,6 +51,8 @@ def search_tracks(query, offset):
 
 
 def main():
+    from worker_safety import install_network_safety
+    install_network_safety()
     root, query, offset = sys.argv[1:]
     sys.path.insert(0, str(Path(root).resolve()))
     # Libraries may print login progress: stdout is reserved for the JSON response.

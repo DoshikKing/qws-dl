@@ -24,9 +24,13 @@ export function saveQobuzSession(session, data) {
     renameSync(temp, file);
   } finally { rmSync(temp, { force: true }); }
 }
-export function qobuzEnvironment(data) {
+export function workerEnvironment() {
   const env = { ...process.env };
-  for (const name of retiredQobuzVariables) delete env[name];
+  for (const name of [...retiredQobuzVariables, 'ADMIN_PASSWORD', 'WEB_PASSWORD', 'ADMIN_USERNAME']) delete env[name];
+  return env;
+}
+export function qobuzEnvironment(data) {
+  const env = workerEnvironment();
   const session = readQobuzSession(data);
   // Internal worker credentials only; never read these from the user's .env.
   if (session && !session.needsLogin) {

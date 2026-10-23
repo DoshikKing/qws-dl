@@ -11,7 +11,6 @@ mutagen==1.48.1
 pathvalidate==3.3.1
 pick==1.6.0
 pillow==13.0.0
-protobuf==3.15.8
 pycryptodomex==3.24.1
 qobuz-dl==0.9.9.10
 requests==2.34.2

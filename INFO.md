@@ -278,6 +278,38 @@ See each upstream distribution for full license/copyright notices.
 Pinned JavaScript dependencies are recorded in `package-lock.json`;
 Python dependencies are recorded in `requirements-orpheus.lock`.
 
+## Download safety and limits
+
+JSON bodies are limited to 64 KiB, including chunked requests. Authentication has
+separate 30-per-minute limits per operation and client; invitation checks cannot
+consume the login budget. Password hashing is capped at eight concurrent operations.
+Authenticated sessions are checked again after reading request bodies.
+
+Enable `TRUST_PROXY=true` only when the app port is inaccessible directly and your
+proxy overwrites `X-Real-IP`. Otherwise the socket peer address is used. The supplied
+nginx configuration already overwrites that header.
+
+Defaults: `MAX_USER_JOBS=10`, `MAX_JOB_BYTES=10737418240` (10 GiB),
+`MAX_USER_BYTES=21474836480` (20 GiB), `MIN_FREE_BYTES=1073741824` (1 GiB).
+The shared active queue remains limited to 50. Each account can create 30 jobs per
+minute and retain 200 unexpired records; the server accepts up to 2000 unexpired
+records. File-free history beyond the latest 200 records is pruned without dropping
+records needed for file cleanup. Log saves are coalesced for up to 500 ms; status
+changes are saved immediately.
+
+Streaming downloads enforce byte/free-space budgets, and the worker directory is
+checked every second. These application checks do not replace filesystem quotas;
+external tools can write between checks. ZIP creation checks room for a second copy,
+and verified archives are reused instead of occupying the worker again.
+
+`scripts/worker_safety.py` enforces TLS verification, request timeouts, HTTP status
+checks and job-relative output paths without modifying pinned upstream checkouts.
+Worker temporary files live under the job's `.qws-work` directory and are excluded
+from ZIPs. Custom CA trust uses `REQUESTS_CA_BUNDLE`; disabling verification is not
+supported. Playlist and artist collections use checked pagination, reject incomplete
+or changing responses, and explicitly reject collections over 10000 entries.
+Unused `protobuf` was removed; see `SECURITY.md` for the outstanding Nuxt tooling advisory.
+
 ## Safe session diagnostics
 
 ```sh

@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
-import { realpath, lstat } from "node:fs/promises";
+import { realpath, lstat, rm } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
+import { folderBytes, requireSpace } from "./storage.mjs";
+import { workerEnvironment } from "./qobuz-session.mjs";
 
 const pending = new Map();
 
@@ -29,6 +31,10 @@ export async function prepareArchive(queue, job) {
   const task = { child: null, promise: null };
   task.promise = (async () => {
     const { folder, file } = await archivePath(queue, job);
+    await rm(join(folder, ".qws-work"), { recursive: true, force: true });
+    // ZIP_STORED needs room for a second copy, plus headers and the free-space reserve.
+    const committed = await lstat(join(folder, ".qws-archive.commit")).catch(() => null);
+    if (!committed?.isFile()) requireSpace(queue.settings, folderBytes(folder) + 1024 * 1024);
     await new Promise((done, reject) => {
       if (queue.stopping) {
         reject(new Error("stopping"));
@@ -37,7 +43,7 @@ export async function prepareArchive(queue, job) {
       const child = spawn(
         queue.settings.python,
         [resolve("scripts/archive.py"), folder],
-        { stdio: "ignore" },
+        { stdio: "ignore", env: workerEnvironment() },
       );
       task.child = child;
       const timer = setTimeout(

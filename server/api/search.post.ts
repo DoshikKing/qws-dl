@@ -1,7 +1,8 @@
+import { readJsonBody } from "../utils/request";
 import { config, readiness } from "../utils/queue.mjs";
 import { searchRequest, searchTracks, SearchError } from "../utils/search.mjs";
 export default defineEventHandler(async (event) => {
-  const body = await readBody(event);
+  const body = await readJsonBody(event);
   try {
     const request = searchRequest(body);
     const settings = config();

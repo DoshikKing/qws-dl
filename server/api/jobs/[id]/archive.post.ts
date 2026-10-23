@@ -16,16 +16,16 @@ export default defineEventHandler((event) => {
       statusMessage: "Загрузка не найдена.",
     });
   try {
-    queue.retryArchive(job);
+    const started = queue.retryArchive(job);
+    setResponseStatus(event, started ? 202 : 200);
   } catch (error) {
     throw createError({
-      statusCode: (error as Error).message === "expired" ? 410 : 409,
+      statusCode: (error as Error).message === "expired" ? 410 : (error as Error).message === "empty" ? 404 : 409,
       statusMessage:
         (error as Error).message === "expired"
           ? "Файлы удалены."
-          : "Архивация уже выполняется.",
+          : (error as Error).message === "empty" ? "Нет файлов для архива." : "Архивация уже выполняется.",
     });
   }
-  setResponseStatus(event, 202);
   return { ok: true };
 });

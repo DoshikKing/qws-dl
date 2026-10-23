@@ -65,6 +65,8 @@ def diagnose():
 
 
 if __name__ == '__main__':
+    from worker_safety import install_network_safety
+    install_network_safety()
     if len(sys.argv) != 1:
         print('{"error":"Unsupported diagnostic option. Use npm run diagnose:qobuz."}')
         raise SystemExit(2)

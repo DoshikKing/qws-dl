@@ -16,6 +16,13 @@ import {
 import { resolve, join } from "node:path";
 
 const derive = promisify(scrypt);
+let hashing = 0;
+async function derivePassword(value, salt) {
+  if (hashing >= 8) throw Object.assign(new Error("Слишком много попыток. Повторите позже."), { statusCode: 429 });
+  hashing++;
+  try { return await derive(value, salt, 64); }
+  finally { hashing--; }
+}
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const token = () => randomBytes(24).toString("hex");
 const sessionLifetime = 12 * 3600_000;
@@ -36,12 +43,12 @@ export function validatePassword(value) {
 }
 async function hashPassword(value) {
   const salt = randomBytes(16).toString("hex");
-  return `${salt}:${Buffer.from(await derive(value, salt, 64)).toString("hex")}`;
+  return `${salt}:${Buffer.from(await derivePassword(value, salt)).toString("hex")}`;
 }
 async function checkPassword(value, hash) {
   if (typeof value !== "string" || value.length > 256 || !hash) return false;
   const [salt, expected] = hash.split(":");
-  const actual = Buffer.from(await derive(value, salt, 64));
+  const actual = Buffer.from(await derivePassword(value, salt));
   const bytes = Buffer.from(expected, "hex");
   return bytes.length === actual.length && timingSafeEqual(bytes, actual);
 }

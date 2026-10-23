@@ -91,6 +91,9 @@ for (const prefix of ['/', '/dl/', '/dl', '/music/dl/']) {
     try {
       await mkdir(join(root, "modules/qobuz"), { recursive: true });
       await mkdir(join(root, "orpheus"));
+      await mkdir(join(root, "utils"));
+      await writeFile(join(root, "utils/__init__.py"), "");
+      await writeFile(join(root, "utils/utils.py"), "sanitise_name = lambda value: str(value) if value else ''\nfix_byte_limit = lambda path: str(path)\n");
       await writeFile(join(root, "orpheus/__init__.py"), "");
       await writeFile(
         join(root, "modules/qobuz/interface.py"),
@@ -235,6 +238,8 @@ else:
         3600_000,
       );
       assert.equal(finished.hasFiles, true);
+      assert.equal((await api(`/api/jobs/${first.id}/archive`, 'POST')).status, 200);
+      assert.equal((await jobs()).find(job => job.id === first.id).status, 'completed');
       assert.ok(!finished.log.includes("test-account-secret"));
       assert.ok(!finished.log.includes("test-session-secret"));
       const settings = JSON.parse(

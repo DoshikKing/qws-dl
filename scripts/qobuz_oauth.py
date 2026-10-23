@@ -54,6 +54,8 @@ def exchange(context, code):
 
 
 if __name__ == '__main__':
+    from worker_safety import install_network_safety
+    install_network_safety()
     logging.disable(logging.CRITICAL)
     try:
         with open(os.devnull, 'w') as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):

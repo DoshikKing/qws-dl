@@ -13,6 +13,8 @@ import {
 import { resolve, join } from "node:path";
 import { prepareArchive } from "./archive.mjs";
 import { qobuzEnvironment, readQobuzSession, retiredQobuzVariables } from "./qobuz-session.mjs";
+import { takeLimit } from "./rate-limit.mjs";
+import { folderBytes, requireSpace } from "./storage.mjs";
 
 export const qualities = ["hifi", "lossless", "high"];
 export function normalizeUrl(value) {
@@ -49,6 +51,11 @@ export function normalizeUrl(value) {
 }
 
 export function config() {
+  const integer = (name, fallback, minimum = 1) => {
+    const value = Number(process.env[name] ?? fallback);
+    if (!Number.isSafeInteger(value) || value < minimum) throw new Error(`${name}: некорректный лимит.`);
+    return value;
+  };
   const quality = process.env.DOWNLOAD_QUALITY || "hifi";
   if (!qualities.includes(quality))
     throw new Error("DOWNLOAD_QUALITY: выберите hifi, lossless или high.");
@@ -73,6 +80,10 @@ export function config() {
     quality,
     timeout,
     retentionHours,
+    maxUserJobs: integer("MAX_USER_JOBS", 10),
+    maxJobBytes: integer("MAX_JOB_BYTES", 10 * 1024 ** 3),
+    maxUserBytes: integer("MAX_USER_BYTES", 20 * 1024 ** 3),
+    minFreeBytes: integer("MIN_FREE_BYTES", 1024 ** 3, 0),
   };
 }
 
@@ -133,6 +144,8 @@ export class DownloadQueue {
         job.finishedAt = new Date().toISOString();
       }
       job.title ||= this.readTitle(job);
+      try { job.sizeBytes = folderBytes(this.folder(job)); }
+      catch { job.sizeBytes = 0; }
       job.retentionHours = Math.min(
         24,
         Math.max(1, Number(job.retentionHours) || 24),
@@ -167,10 +180,19 @@ export class DownloadQueue {
   }
 
   save() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = null;
     writeFileSync(this.file + ".tmp", JSON.stringify(this.jobs), {
       mode: 0o600,
     });
     renameSync(this.file + ".tmp", this.file);
+  }
+
+  saveSoon() {
+    if (!this.saveTimer) {
+      this.saveTimer = setTimeout(() => this.save(), 500);
+      this.saveTimer.unref();
+    }
   }
 
   add(
@@ -187,6 +209,17 @@ export class DownloadQueue {
       retentionHours > 24
     )
       throw new Error("Срок хранения: целое число от 1 до 24 часов.");
+    const own = this.jobs.filter((job) => job.userId === userId && !this.expired(job));
+    const pending = (job) => ["queued", "running", "archiving"].includes(job.status);
+    if (userId && (own.filter(pending).length >= (this.settings.maxUserJobs ?? 10) || own.length >= 200))
+      throw Object.assign(new Error("Лимит заданий аккаунта исчерпан. Дождитесь завершения или удаления архивов."), { statusCode: 429 });
+    if (this.jobs.filter((job) => !this.expired(job)).length >= 2000)
+      throw Object.assign(new Error("Хранилище заданий заполнено. Повторите позже."), { statusCode: 429 });
+    if (userId && own.reduce((bytes, job) => bytes + (job.sizeBytes || 0), 0) >= (this.settings.maxUserBytes ?? 20 * 1024 ** 3))
+      throw Object.assign(new Error("Лимит хранилища аккаунта исчерпан."), { statusCode: 507 });
+    requireSpace(this.settings);
+    if (userId && !takeLimit(`jobs:${this.settings.data}:${userId}`, 30))
+      throw Object.assign(new Error("Слишком много новых заданий. Подождите минуту."), { statusCode: 429 });
     if (
       this.jobs.filter((job) =>
         ["queued", "running", "archiving"].includes(job.status),
@@ -260,11 +293,18 @@ export class DownloadQueue {
       return;
     }
     const ready = readiness(this.settings);
-    if (!ready.ready) {
+    let storageError;
+    try {
+      requireSpace(this.settings);
+      const used = this.jobs.filter((other) => other.userId === job.userId && !this.expired(other))
+        .reduce((bytes, other) => bytes + (other.sizeBytes || 0), 0);
+      if (used >= (this.settings.maxUserBytes ?? 20 * 1024 ** 3)) throw new Error("Лимит хранилища аккаунта исчерпан.");
+    } catch (error) { storageError = error.message; }
+    if (!ready.ready || storageError) {
       job.status = "failed";
-      job.error = !ready.installed
+      job.error = storageError || (!ready.installed
         ? "Установите OrpheusDL: npm run setup:orpheus"
-        : "Войдите в Qobuz через Настройки → Qobuz.";
+        : "Войдите в Qobuz через Настройки → Qobuz.");
       job.finishedAt = new Date().toISOString();
       job.expiresAt = new Date(
         Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
@@ -280,6 +320,10 @@ export class DownloadQueue {
     job.startedAt = new Date().toISOString();
     this.save();
     const environment = qobuzEnvironment(this.settings.data);
+    const otherBytes = this.jobs.filter((other) => other.userId === job.userId && other.id !== job.id && !this.expired(other))
+      .reduce((bytes, other) => bytes + (other.sizeBytes || 0), 0);
+    const byteLimit = Math.min(this.settings.maxJobBytes ?? 10 * 1024 ** 3,
+      (this.settings.maxUserBytes ?? 20 * 1024 ** 3) - otherBytes);
     const child = spawn(
       this.settings.python,
       ["-u", this.settings.runner, this.settings.root, job.url, job.quality],
@@ -287,7 +331,9 @@ export class DownloadQueue {
         cwd: this.settings.root,
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...environment, DOWNLOAD_DIR: folder, PYTHONUNBUFFERED: "1" },
+        env: { ...environment, DOWNLOAD_DIR: folder, PYTHONUNBUFFERED: "1",
+          MAX_JOB_BYTES: String(byteLimit),
+          MIN_FREE_BYTES: String(this.settings.minFreeBytes ?? 1024 ** 3) },
       },
     );
     this.active = { child, job };
@@ -302,7 +348,7 @@ export class DownloadQueue {
         if (lines.length) {
           job.log = (job.log + redact(lines.join("\n"), [environment.QOBUZ_AUTH_TOKEN]) + "\n").slice(-24000);
           job.title ||= this.readTitle(job);
-          this.save();
+          this.saveSoon();
         }
         // Discard huge unterminated lines instead of retaining unbounded process output.
         if (pending.length > 64000) pending = "";
@@ -321,9 +367,28 @@ export class DownloadQueue {
       job.error = "Превышено время загрузки.";
       this.kill();
     }, this.settings.timeout * 1000);
+    const checkStorage = () => {
+      requireSpace(this.settings);
+      if (folderBytes(folder) > byteLimit) throw new Error("Лимит размера загрузки исчерпан.");
+    };
+    const storageTimer = setInterval(() => {
+      try {
+        checkStorage();
+      } catch {
+        clearInterval(storageTimer);
+        job.error = "Лимит загрузки или свободного места исчерпан.";
+        this.kill();
+      }
+    }, 1000);
+    storageTimer.unref();
     child.once("close", (code) => {
       clearTimeout(timer);
+      clearInterval(storageTimer);
       if (job.status !== "cancelled") {
+        if (!job.error) {
+          try { checkStorage(); }
+          catch { job.error = "Лимит загрузки или свободного места исчерпан."; }
+        }
         job.status = code === 0 && !job.error ? "completed" : "failed";
         if (code === 3 && !job.error)
           job.error =
@@ -364,6 +429,7 @@ export class DownloadQueue {
       delete job.downloadStatus;
       job.hasFiles =
         !this.expired(job) && this.hasArchive(job) && !job.archiveError;
+      job.sizeBytes = folderBytes(this.folder(job));
       this.active = null;
       this.save();
       this.cleanupExpired();
@@ -379,12 +445,15 @@ export class DownloadQueue {
       this.active?.job.id === job.id
     )
       throw new Error("busy");
+    if (job.hasFiles && !job.archiveError && this.hasArchive(job)) return false;
+    if (!job.archiveError && !this.hasFiles(job)) throw new Error("empty");
     job.downloadStatus = job.status;
     job.status = "archiving";
     job.hasFiles = false;
     delete job.archiveError;
     this.save();
     this.pump();
+    return true;
   }
 
   deleteFiles(job) {
@@ -404,6 +473,7 @@ export class DownloadQueue {
 
   close() {
     this.stopping = true;
+    if (this.saveTimer) this.save();
     clearTimeout(this.cleanupTimer);
     this.kill();
   }
@@ -460,6 +530,11 @@ export class DownloadQueue {
     }
   }
 
+  hasFolder(job) {
+    try { return existsSync(this.folder(job)); }
+    catch { return false; }
+  }
+
   hasArchive(job) {
     try {
       return lstatSync(join(this.folder(job), ".qws-archive.zip")).isFile();
@@ -500,7 +575,7 @@ export class DownloadQueue {
       (job, index) =>
         index < 200 ||
         ["running", "queued", "archiving"].includes(job.status) ||
-        (!job.expiredAt && !job.deletedAt),
+        (!job.expiredAt && !job.deletedAt && this.hasFolder(job)),
     );
   }
 

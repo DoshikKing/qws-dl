@@ -8,14 +8,17 @@ import sys
 
 from qobuz_web import QobuzWebError
 from media_title import install_title_reporter
+from worker_safety import install_network_safety, install_download_safety
 
 
 def main():
     if len(sys.argv) != 4 or sys.argv[3] not in {'hifi', 'lossless', 'high'}:
         raise ValueError('Expected: run-orpheus.py ORPHEUS_DIR QOBUZ_URL QUALITY')
     root, url, quality = Path(sys.argv[1]).resolve(), sys.argv[2], sys.argv[3]
+    install_network_safety()
     os.chdir(root)
     sys.path.insert(0, str(root))
+    install_download_safety(os.environ['DOWNLOAD_DIR'])
     from qobuz_web import install_web_api
     install_web_api()
     os.umask(0o077)

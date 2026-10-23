@@ -21,4 +21,5 @@ export default defineEventHandler(async (event) => {
   if (!user)
     throw createError({ statusCode: 401, statusMessage: "Войдите в аккаунт." });
   event.context.user = user;
+  event.context.userStore = store;
 });

@@ -1,5 +1,6 @@
 """Run the real web-client libraries against a local HTTP-response fixture."""
 import base64
+from copy import deepcopy
 import contextlib
 import hashlib
 import io
@@ -178,7 +179,7 @@ class WebLoginTest(unittest.TestCase):
             self.assertEqual(params['limit'], 20)
             return self.response(url, {'tracks': {'total': 45, 'items': [{'id': 42, 'title': 'Песня', 'performer': {'name': 'Исполнитель'}, 'album': {'title': 'Альбом'}, 'duration': 181, 'streamable': True}]}})
         if url.endswith(('/album/get', '/track/get', '/playlist/get', '/artist/get')):
-            return self.response(url, {'id': 'fixture-metadata'})
+            return self.response(url, {'id': 'fixture-metadata', 'tracks': {'total': 0, 'items': []}, 'albums': {'total': 0, 'items': []}})
         self.fail('Unexpected outbound request: ' + url)
 
     def test_discovery_login_signature_metadata_and_cached_mobile_token(self):
@@ -193,6 +194,21 @@ class WebLoginTest(unittest.TestCase):
         self.assertEqual(self.login_calls, 1)
         for secret in ['fixture-password', 'fixture-web-token', 'fixture-valid-secret']:
             self.assertNotIn(secret, output.getvalue())
+
+    def test_collection_pagination_rejects_missing_and_duplicate_pages(self):
+        for method, collection in [('get_playlist', 'tracks'), ('get_artist', 'albums')]:
+            pages = [
+                {collection: {'total': 3, 'items': [{'id': 1}, {'id': 2}]}},
+                {collection: {'total': 3, 'items': [{'id': 3}]}},
+            ]
+            with patch.object(self.api, '_get', side_effect=deepcopy(pages)) as fetch:
+                result = getattr(self.api, method)('fixture')
+                self.assertEqual(len(result[collection]['items']), 3)
+                self.assertEqual(fetch.call_args_list[1].args[1]['offset'], 2)
+            for remaining in [[], [{'id': 2}]]:
+                with patch.object(self.api, '_get', side_effect=[pages[0], {collection: {'total': 3, 'items': remaining}}]):
+                    with self.assertRaises(QobuzWebError):
+                        getattr(self.api, method)('fixture')
 
     def test_search_uses_saved_session_and_pagination(self):
         result = search_tracks('Песня & исполнитель', 20)
