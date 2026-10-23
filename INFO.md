@@ -314,6 +314,24 @@ indicates a transport failure, `dependencies_missing` an incomplete runtime, and
 `authentication_or_client_error` a client/discovery/subscription/signing failure.
 You can share the resulting JSON report for troubleshooting. Never share `.env`.
 
+If web login returns 401 despite a matching password, compare API request formats:
+
+```sh
+docker compose run --rm --no-deps --entrypoint /opt/runtime/venv/bin/python qws-dl /app/scripts/diagnose_qobuz.py --compare-password-login
+# Without Docker:
+npm run diagnose:qobuz -- --compare-password-login
+```
+
+Requires `QOBUZ_AUTH_MODE=web`. This explicit diagnostic makes up to four login
+attempts using the same credentials: POST email/MD5, GET email/MD5 (as used by the
+upstream library), POST username/MD5, and POST email/original password over HTTPS.
+It stops at the first success or any failure other than login 401, including rate
+limiting and network errors. Run it once, not in a loop. It reports `working_variant`
+only after login and signing succeed. These alternatives are diagnostic probes,
+not confirmed fixes; normal application login remains unchanged. GET places email
+and the password hash in the HTTPS request query; upstream/proxy access logs may
+record that query. The diagnostic report never includes it or other secrets.
+
 ### Compare the container password with hidden input
 
 If a fresh browser login succeeds, this local check compares the typed password with the

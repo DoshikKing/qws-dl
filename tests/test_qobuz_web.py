@@ -18,10 +18,53 @@ sys.path.insert(0, str(ROOT / '.runtime/orpheusdl'))
 from qobuz_web import web_api_class, QobuzWebError
 from modules.qobuz.qobuz_api import Qobuz
 from search_qobuz import search_tracks
-from diagnose_qobuz import diagnose
+from diagnose_qobuz import diagnose, compare_password_login, PASSWORD_VARIANTS
 
 
 class WebLoginTest(unittest.TestCase):
+    def test_password_comparison_checks_formats_and_stops_on_success(self):
+        seen = []
+
+        def transport(session, method, url, **kwargs):
+            if not url.endswith('/user/login'):
+                return self.request(session, method, url, **kwargs)
+            params = kwargs.get('data', kwargs.get('params', {}))
+            expected = PASSWORD_VARIANTS[len(seen)]
+            seen.append(expected)
+            self.assertEqual(method.upper(), 'GET' if expected.startswith('get_') else 'POST')
+            self.assertEqual(params.get('username' if 'username' in expected else 'email'), 'fixture@example.test')
+            self.assertEqual(params['password'], 'fixture-password' if expected.endswith('_plain')
+                             else hashlib.md5(b'fixture-password').hexdigest())
+            if expected != self.working_variant:
+                return self.response(url, {'message': 'fixture-password'}, self.comparison_status)
+            normalized = {'app_id': params['app_id'], 'email': 'fixture@example.test',
+                          'password': hashlib.md5(b'fixture-password').hexdigest()}
+            return self.request(session, 'POST', url, data=normalized, timeout=30)
+
+        for working, status, count, result in [
+            ('post_username_md5', 401, 3, 'ok'),
+            ('post_email_plain', 401, 4, 'ok'),
+            (None, 401, 4, 'login_rejected_401'),
+            (None, 429, 1, 'authentication_or_client_error'),
+        ]:
+            with self.subTest(working=working, status=status):
+                seen.clear()
+                self.working_variant, self.comparison_status = working, status
+                with patch.object(requests.sessions.Session, 'request', transport):
+                    report = compare_password_login()
+                self.assertEqual(report['working_variant'], working)
+                self.assertEqual(report['result'], result)
+                self.assertEqual(len(seen), count)
+                for secret in ['fixture-password', 'fixture-web-token', hashlib.md5(b'fixture-password').hexdigest()]:
+                    self.assertNotIn(secret, json.dumps(report))
+
+    def test_password_comparison_rejects_token_mode_without_requests(self):
+        with patch.dict(os.environ, {'QOBUZ_AUTH_MODE': 'token'}):
+            report = compare_password_login()
+        self.assertEqual(report['result'], 'configuration_error')
+        self.assertEqual(len(report['attempts']), 1)
+        self.assertEqual(report['attempts'][0]['requests'], [])
+
     def test_diagnostic_report_never_exposes_library_output_or_secrets(self):
         for mode, expected in [('ok', 'ok'), ('401', 'login_rejected_401'), ('network', 'network_error')]:
             with self.subTest(mode=mode):
