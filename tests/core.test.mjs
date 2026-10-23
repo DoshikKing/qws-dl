@@ -18,7 +18,6 @@ import {
   redact,
   DownloadQueue,
   readiness,
-  authMode,
 } from "../server/utils/queue.mjs";
 import { jobArchive } from "../server/utils/archive.mjs";
 
@@ -65,58 +64,17 @@ test("redacts credentials and signed URLs from process logs", () => {
   }
 });
 
-test("web readiness requires only account credentials; mobile mode requires app keys", async () => {
-  const names = [
-    "QOBUZ_USERNAME",
-    "QOBUZ_PASSWORD",
-    "QOBUZ_APP_ID",
-    "QOBUZ_APP_SECRET",
-    "QOBUZ_AUTH_MODE",
-    "QOBUZ_USER_ID",
-    "QOBUZ_AUTH_TOKEN",
-  ];
-  const saved = Object.fromEntries(
-    names.map((name) => [name, process.env[name]]),
-  );
+test('readiness requires the saved OAuth session and ignores legacy credentials', async () => {
+  const data = await mkdtemp(join(tmpdir(), 'qws-ready-'));
   try {
-    process.env.QOBUZ_USERNAME = "fixture";
-    process.env.QOBUZ_PASSWORD = "fixture";
-    delete process.env.QOBUZ_APP_ID;
-    delete process.env.QOBUZ_APP_SECRET;
-    delete process.env.QOBUZ_AUTH_MODE;
-    const settings = { root: "/missing", python: "/missing", quality: "hifi" };
+    const settings = { root: '/missing', python: '/missing', data };
+    assert.deepEqual(readiness(settings).missing, ['QOBUZ_SESSION']);
+    await writeFile(join(data, 'qobuz-session.json'), JSON.stringify({ userId: '12345', authToken: 'fixture-token' }));
     assert.deepEqual(readiness(settings).missing, []);
-    assert.equal(readiness(settings).authMode, "web");
-    process.env.QOBUZ_AUTH_MODE = "mobile";
-    assert.deepEqual(readiness(settings).missing, [
-      "QOBUZ_APP_ID",
-      "QOBUZ_APP_SECRET",
-    ]);
-    process.env.QOBUZ_AUTH_MODE = "token";
-    delete process.env.QOBUZ_USERNAME;
-    delete process.env.QOBUZ_PASSWORD;
-    delete process.env.QOBUZ_USER_ID;
-    delete process.env.QOBUZ_AUTH_TOKEN;
-    assert.deepEqual(readiness(settings).missing, [
-      "QOBUZ_USER_ID",
-      "QOBUZ_AUTH_TOKEN",
-    ]);
-    process.env.QOBUZ_USER_ID = "12345";
-    process.env.QOBUZ_AUTH_TOKEN = "fixture-session-secret";
-    assert.deepEqual(readiness(settings).missing, []);
-    assert.ok(
-      !redact("token: fixture-session-secret").includes(
-        "fixture-session-secret",
-      ),
-    );
-    process.env.QOBUZ_AUTH_MODE = "invalid";
-    assert.throws(authMode, /web, token или mobile/);
-  } finally {
-    for (const [name, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-  }
+    await writeFile(join(data, 'qobuz-session.json'), JSON.stringify({ userId: '12345', authToken: 'fixture-token', needsLogin: true }));
+    assert.equal(readiness(settings).sessionNeedsLogin, true);
+    assert.deepEqual(readiness(settings).missing, ['QOBUZ_SESSION']);
+  } finally { await rm(data, { recursive: true, force: true }); }
 });
 
 test("restart records interrupted jobs as failed and persists history", async () => {
@@ -201,6 +159,7 @@ test("worker serializes processes, handles failures and cancels a running job", 
       runner,
       timeout: 5,
     });
+    await writeFile(join(base, 'data/qobuz-session.json'), JSON.stringify({ userId: '12345', authToken: 'test-secret' }));
     const first = queue.add("https://open.qobuz.com/track/1", "hifi");
     const second = queue.add("https://open.qobuz.com/track/2", "lossless");
     assert.equal(first.status, "running");

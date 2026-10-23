@@ -9,6 +9,7 @@ import sys
 import requests
 from qobuz_dl.bundle import Bundle
 from qobuz_web import WebClient
+from qobuz_dl.exceptions import AuthenticationError
 
 
 def prepare():
@@ -18,6 +19,12 @@ def prepare():
         raise ValueError('Player format changed')
     return {'appId': bundle.get_app_id(), 'privateKey': match[1],
             'secrets': list(bundle.get_secrets().values())}
+
+
+def refresh(saved):
+    bundle = Bundle()
+    client = WebClient(saved['userId'], saved['authToken'], bundle.get_app_id(), list(bundle.get_secrets().values()))
+    return {'userId': saved['userId'], 'authToken': client.uat}
 
 
 def exchange(context, code):
@@ -42,7 +49,7 @@ def exchange(context, code):
     if not re.fullmatch(r'[0-9]{1,32}', user_id):
         raise ValueError('Invalid account')
     # Reuse the same profile/subscription/signing checks as actual downloads.
-    client = WebClient(user_id, token, context['appId'], context['secrets'], token_mode=True)
+    client = WebClient(user_id, token, context['appId'], context['secrets'])
     return {'userId': user_id, 'authToken': client.uat}
 
 
@@ -55,9 +62,14 @@ if __name__ == '__main__':
                 result = prepare()
             elif payload['action'] == 'exchange':
                 result = exchange(payload['context'], payload['code'])
+            elif payload['action'] == 'refresh':
+                result = refresh(payload['session'])
             else:
                 raise ValueError('Invalid action')
         print(json.dumps(result))
+    except AuthenticationError:
+        print('{"error":"session_expired"}')
+        raise SystemExit(1)
     except Exception:
         # Never expose callback codes, tokens, request URLs, bodies or tracebacks.
         print('{"error":"qobuz_authorization_failed"}')

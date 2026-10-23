@@ -12,20 +12,9 @@ import {
 } from "node:fs";
 import { resolve, join } from "node:path";
 import { prepareArchive } from "./archive.mjs";
-import { qobuzEnvironment, readQobuzSession } from "./qobuz-session.mjs";
+import { qobuzEnvironment, readQobuzSession, retiredQobuzVariables } from "./qobuz-session.mjs";
 
 export const qualities = ["hifi", "lossless", "high"];
-export const requiredCredentials = ["QOBUZ_USERNAME", "QOBUZ_PASSWORD"];
-const mobileCredentials = ["QOBUZ_APP_ID", "QOBUZ_APP_SECRET"];
-const tokenCredentials = ["QOBUZ_USER_ID", "QOBUZ_AUTH_TOKEN"];
-
-export function authMode() {
-  const mode = process.env.QOBUZ_AUTH_MODE || "web";
-  if (!["web", "mobile", "token"].includes(mode))
-    throw new Error("QOBUZ_AUTH_MODE: выберите web, token или mobile.");
-  return mode;
-}
-
 export function normalizeUrl(value) {
   if (typeof value !== "string" || value.length > 2048)
     throw new Error("Укажите ссылку Qobuz.");
@@ -83,19 +72,14 @@ export function config() {
     runner: resolve("scripts/run-orpheus.py"),
     quality,
     timeout,
-    authMode: authMode(),
     retentionHours,
   };
 }
 
 export function readiness(settings = config()) {
-  const mode = settings.authMode || authMode();
-  const required = [
-    ...(mode === "token" ? tokenCredentials : requiredCredentials),
-    ...(mode === "mobile" ? mobileCredentials : []),
-  ];
-  const oauthConnected = mode === 'web' && !!readQobuzSession(settings.data);
-  const missing = oauthConnected ? [] : required.filter((name) => !process.env[name]);
+  const session = readQobuzSession(settings.data);
+  const oauthConnected = !!session && !session.needsLogin;
+  const missing = oauthConnected ? [] : ['QOBUZ_SESSION'];
   const installed =
     existsSync(join(settings.root, "orpheus.py")) &&
     existsSync(join(settings.root, "modules/qobuz/interface.py")) &&
@@ -105,8 +89,9 @@ export function readiness(settings = config()) {
     missing,
     ready: installed && missing.length === 0,
     quality: settings.quality,
-    authMode: mode,
     oauthConnected,
+    sessionNeedsLogin: !!session?.needsLogin,
+    lastRefreshedAt: session?.updatedAt || null,
     retentionHours: settings.retentionHours || 24,
   };
 }
@@ -115,9 +100,7 @@ export function redact(text, privateValues = []) {
   let clean = text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
   for (const value of privateValues) if (value) clean = clean.split(value).join('[REDACTED]');
   for (const name of [
-    ...requiredCredentials,
-    ...mobileCredentials,
-    ...tokenCredentials,
+    ...retiredQobuzVariables,
     "WEB_PASSWORD",
     "ADMIN_PASSWORD",
   ]) {
@@ -281,7 +264,7 @@ export class DownloadQueue {
       job.status = "failed";
       job.error = !ready.installed
         ? "Установите OrpheusDL: npm run setup:orpheus"
-        : "Заполните в .env: " + ready.missing.join(", ");
+        : "Войдите в Qobuz через Настройки → Qobuz.";
       job.finishedAt = new Date().toISOString();
       job.expiresAt = new Date(
         Date.parse(job.finishedAt) + job.retentionHours * 3600_000,

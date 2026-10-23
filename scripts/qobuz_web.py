@@ -3,7 +3,6 @@
 No upstream files are modified. Credentials and discovered client parameters stay
 inside the Python worker. qobuz-dl is installed as a pinned dependency.
 """
-import hashlib
 import os
 
 from qobuz_dl.bundle import Bundle
@@ -19,27 +18,22 @@ class QobuzWebError(Exception):
 
 
 class WebClient(Client):
-    """Keep qobuz-dl signing but use the web player's form-login transport."""
-    def __init__(self, identifier, credential, app_id, secrets, token_mode=False):
-        self.token_mode = token_mode
-        super().__init__(identifier, credential, app_id, secrets)
-
+    """Keep qobuz-dl signing and refresh the authenticated browser session."""
     def api_call(self, epoint, **kwargs):
         if epoint != 'user/login':
             return super().api_call(epoint, **kwargs)
-        params = {'app_id': self.id}
-        if self.token_mode:
-            params.update(user_id=kwargs['email'], user_auth_token=kwargs['pwd'])
-            self.session.headers['X-User-Auth-Token'] = kwargs['pwd']
-        else:
-            params.update(email=kwargs['email'], password=kwargs['pwd'])
+        self.session.headers['X-User-Auth-Token'] = kwargs['pwd']
+        params = {'extra': 'partner'}
         response = self.session.post(self.base + epoint, data=params, timeout=30)
         if response.status_code == 401:
             raise AuthenticationError('Qobuz rejected authentication')
         if response.status_code == 400:
             raise InvalidAppIdError('Qobuz rejected application parameters')
         response.raise_for_status()
-        return response.json()
+        profile = response.json()
+        if str(profile['user']['id']) != str(kwargs['email']):
+            raise AuthenticationError('Session account mismatch')
+        return profile
 
 
 def web_api_class(legacy_api):
@@ -48,32 +42,23 @@ def web_api_class(legacy_api):
             super().__init__('', '', exception)
             self._client = None
 
-        def _connect(self, username=None, password=None):
+        def _connect(self):
             if self._client is not None:
                 return self._client
-            token_mode = os.environ.get('QOBUZ_AUTH_MODE') == 'token'
-            username = os.environ.get('QOBUZ_USER_ID') if token_mode else username or os.environ.get('QOBUZ_USERNAME')
-            password = os.environ.get('QOBUZ_AUTH_TOKEN') if token_mode else password or os.environ.get('QOBUZ_PASSWORD')
-            if not username or not password:
-                raise QobuzWebError('Заполните QOBUZ_USER_ID и QOBUZ_AUTH_TOKEN в .env.' if token_mode
-                                    else 'Заполните QOBUZ_USERNAME и QOBUZ_PASSWORD в .env.')
+            # Private worker environment populated from the saved OAuth session by Node.
+            user_id = os.environ.get('QOBUZ_USER_ID')
+            token = os.environ.get('QOBUZ_AUTH_TOKEN')
+            if not user_id or not token:
+                raise QobuzWebError('Войдите в Qobuz через Настройки → Qobuz.')
             try:
                 print('Qobuz: получаем параметры веб-клиента и выполняем вход.', flush=True)
                 bundle = Bundle()
                 client = WebClient(
-                    username, password if token_mode else hashlib.md5(password.encode('utf-8')).hexdigest(),
+                    user_id, token,
                     bundle.get_app_id(), list(bundle.get_secrets().values()),
-                    token_mode=token_mode,
                 )
             except AuthenticationError:
-                raise QobuzWebError(
-                    'Qobuz отклонил запрос авторизации (401). Это не доказывает ошибку пароля. '
-                    + ('Браузерная сессия могла истечь: войдите снова через Настройки → Qobuz. '
-                       'В явном режиме token обновите QOBUZ_AUTH_TOKEN и QOBUZ_USER_ID.'
-                       if token_mode else 'Прямой парольный вход user/login больше не поддерживается '
-                       'текущим веб-клиентом Qobuz. Откройте Настройки → Qobuz → Войти в Qobuz '
-                       'и введите email и пароль на сайте сервиса.')
-                ) from None
+                raise QobuzWebError('Сессия Qobuz истекла или отозвана (401). Войдите снова через Настройки → Qobuz.') from None
             except IneligibleError:
                 raise QobuzWebError('У аккаунта Qobuz нет подписки с доступом к загрузкам.') from None
             except (InvalidAppIdError, InvalidAppSecretError):
@@ -98,14 +83,14 @@ def web_api_class(legacy_api):
             return client
 
         def login(self, email, password):
-            return self._connect(email, password).uat
+            return self._connect().uat
 
         def headers(self):
             return {'X-App-Id': self.app_id, 'X-User-Auth-Token': self.auth_token}
 
         def _get(self, url, params=None):
-            # Core may reuse a saved mobile token and skip login. Establish our
-            # web session lazily anyway; never send the old token to the API.
+            # Core can skip login when it has a saved token. Establish the
+            # current OAuth session lazily instead of reusing that saved token.
             self._connect()
             params = {**(params or {}), 'app_id': self.app_id}
             return super()._get(url, params)

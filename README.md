@@ -27,7 +27,7 @@ docker compose up -d --build
 
 Open port `3000` on the local host, choose **Sign in**, and use `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
 Then open **Settings → Qobuz → Sign in to Qobuz** and enter your email/password on Qobuz’s site.
-The returned session is saved automatically; manual tokens and application keys are unnecessary.
+The session is saved and renewed automatically while Qobuz accepts it. No Qobuz credentials go in `.env`.
 For a reverse proxy under `/dl/`, set `NUXT_APP_BASE_URL=/dl/` and use
 [the nginx location snippet](deploy/nginx-dl.conf).
 

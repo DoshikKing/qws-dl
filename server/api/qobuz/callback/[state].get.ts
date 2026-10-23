@@ -1,5 +1,5 @@
 import { accountStore } from '../../../utils/account';
-import { config } from '../../../utils/queue.mjs';
+import { config, getQueue } from '../../../utils/queue.mjs';
 import { finishQobuzLogin } from '../../../utils/qobuz-oauth.mjs';
 
 export default defineEventHandler(async event => {
@@ -12,6 +12,7 @@ export default defineEventHandler(async event => {
   try {
     await finishQobuzLogin(config(), getRouterParam(event, 'state'), flowCookie,
       query.code ?? query.code_autorisation, await accountStore());
+    getQueue().pump();
     result = 'connected';
   } catch { /* Never expose provider callback data or exception text. */ }
   return sendRedirect(event, base + '?qobuz=' + result, 303);

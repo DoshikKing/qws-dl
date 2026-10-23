@@ -39,10 +39,6 @@ When running `.output/server/index.mjs` directly, supply the environment yoursel
 | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `ADMIN_USERNAME`, `ADMIN_PASSWORD`  | Administrator login (default `admin`) and password (10–256 characters); created/synced on startup  |
 | `USER_INVITE_LIMIT`                 | Lifetime invite registrations per user, 0–10000; default 1; admin unlimited                        |
-| `QOBUZ_USERNAME`, `QOBUZ_PASSWORD`  | Legacy/mobile API email and original password; unnecessary for browser OAuth                                                     |
-| `QOBUZ_AUTH_MODE`                   | `web`: browser OAuth from admin settings; `token`: manual session; `mobile`: legacy API |
-| `QOBUZ_USER_ID`, `QOBUZ_AUTH_TOKEN` | Your own browser account ID and auth token; only for `token` mode                                  |
-| `QOBUZ_APP_ID`, `QOBUZ_APP_SECRET`  | Only required in `mobile` mode; ignored in `web` mode                                              |
 | `DOWNLOAD_QUALITY`                  | `hifi`, `lossless`, or `high`; defaults to `hifi`                                                  |
 | `DOWNLOAD_RETENTION_HOURS`          | Default lifetime after a job finishes: integer hours, 1–24; default 24                             |
 | `ORPHEUS_DIR`, `PYTHON_BIN`         | Installed OrpheusDL checkout and its virtual-environment Python                                    |
@@ -98,74 +94,50 @@ variables; legacy password-only cookies are rejected. Existing job files are pac
 available to the administrator until their retention expires. The old password must meet the
 new 10–256 character limit.
 
-## Qobuz web authentication
+## Qobuz sign-in and automatic session renewal
 
-Set `QOBUZ_AUTH_MODE=web` (default). Sign into QWS as administrator, then open
-**Settings → Qobuz → Sign in to Qobuz**. Enter your email/password on Qobuz's own
-site and complete any requested verification. You return to QWS automatically.
-There is no token to copy, and no server-side browser or desktop is needed.
+Sign into QWS as administrator, then open **Settings → Qobuz → Sign in to Qobuz**.
+Enter your email/password on Qobuz's own site and complete any requested verification.
+You return to QWS automatically; there is no token to copy or browser to install on
+this server. No Qobuz credentials or authentication mode belong in `.env`.
 
-The legacy direct `user/login` password request started failing after Qobuz's
-April 2026 authentication changes. Current browser login uses OAuth/reCAPTCHA;
-changing the password hash or HTTP method does not restore that old protocol.
-See the upstream reports [qobuz-dl #329](https://github.com/vitiko98/qobuz-dl/issues/329),
-[OAuth integration #331](https://github.com/vitiko98/qobuz-dl/pull/331), and
+Existing `QOBUZ_AUTH_MODE`, username/password, manual-token and app-key variables
+are retired and ignored. Remove them from your private `.env`. An existing saved
+OAuth session continues working after this update; deleting volumes is unnecessary.
+
+The session is stored in `DATA_DIR/qobuz-session.json` with mode `0600`, in the
+persistent `app-data` volume in Docker. Search/download workers receive it privately.
+Credentials are never returned to the UI. Reauthentication replaces the common
+server Qobuz account. A suitable account/subscription is still required.
+
+A background check runs every minute. It attempts renewal after 30 minutes, or within
+five minutes of expiry when the token provides a JWT expiry hint. Expiry parsing is
+only a scheduling hint; account/subscription/signing checks authenticate each renewal.
+The service calls the authenticated `user/login` endpoint and atomically saves the
+returned token. This is best-effort renewal, not a guarantee of an unlimited session:
+Qobuz does not provide us a separate refresh credential that can revive a revoked
+session. If its response does not extend expiry, or it requests browser verification,
+a new interactive sign-in may still be necessary.
+
+Temporary network/client failures preserve the existing session and retry after
+five minutes. Authentication rejection marks the session as requiring sign-in and
+stops background retries until the administrator signs in again. Refreshes are
+serialized; an older request cannot overwrite a newly connected account. Restarting
+preserves renewal metadata; older two-field session files are renewed on startup.
+
+Only administrators can initiate browser sign-in. The ten-minute, one-use callback
+state is bound to an HttpOnly SameSite=Lax cookie and the initiating admin session;
+regular QWS cookies remain SameSite=Strict. Restarting during browser sign-in requires
+starting again. Under `/dl/`, set `NUXT_APP_BASE_URL=/dl/`, preserve Host and
+X-Forwarded-Proto, and use the updated [nginx snippet](deploy/nginx-dl.conf) to disable
+callback access logging. Apply equivalent logging rules at other reverse proxies.
+The server needs HTTPS access to `play.qobuz.com` and `www.qobuz.com`, plus returned
+media/cover destinations. The browser handles Qobuz's own verification services.
+
+The former direct password API stopped working after Qobuz's April 2026 authentication
+changes: see [qobuz-dl #329](https://github.com/vitiko98/qobuz-dl/issues/329),
+[OAuth #331](https://github.com/vitiko98/qobuz-dl/pull/331), and
 [streamrip #954](https://github.com/nathom/streamrip/issues/954).
-The application now exchanges the browser authorization code, validates the account,
-subscription and request signing, then saves the resulting session privately.
-This changes the authentication flow; unattended email/password-only API login is
-not restored. The service may require browser verification again when a session expires.
-
-`QOBUZ_USERNAME` and `QOBUZ_PASSWORD` are unnecessary for this flow. They remain
-available for legacy API compatibility/mobile mode. Neither the application nor
-its workers receive the password typed on Qobuz's website. Manual application keys
-are unnecessary; web-player parameters are discovered at runtime.
-
-The session is stored as `DATA_DIR/qobuz-session.json` with mode `0600`, in the
-existing persistent `app-data` volume in Docker. Search and download workers reuse
-it without restart. In `web` mode it takes precedence over legacy email/password
-fields. Explicit `token` and `mobile` modes keep their own configured credentials.
-Session tokens are never returned to the browser. On expiry, use the sign-in button
-again. Reauthentication replaces the saved Qobuz account for the whole server.
-
-Only administrators can start a connection. Callbacks require a ten-minute, single-use
-state and a separate HttpOnly SameSite=Lax flow cookie; the regular QWS session
-remains SameSite=Strict. The initiating admin session must still be valid when the
-exchange finishes. Restarting during login requires starting again.
-
-Keep your browser on the same external application origin throughout login. Under
-`/dl/`, set `NUXT_APP_BASE_URL=/dl/` and preserve Host and X-Forwarded-Proto at nginx.
-Use the updated [nginx snippet](deploy/nginx-dl.conf), which disables callback access
-logging so one-time codes are not recorded. Apply equivalent logging rules at any
-other reverse proxies. Only the Qobuz authorization page needs browser access to
-its verification services; the server needs HTTPS access to `play.qobuz.com` and
-`www.qobuz.com`, plus media/cover destinations for downloads. A suitable account and
-subscription are still required. Browser/bundle changes may require an integration update.
-
-## When browser login works but password authentication returns 401
-
-Use the sign-in button described above. If browser OAuth cannot complete in your deployment,
-you can explicitly reuse **your own** browser session:
-
-```dotenv
-QOBUZ_AUTH_MODE=token
-QOBUZ_USER_ID=your-account-id
-QOBUZ_AUTH_TOKEN='your-own-browser-session-token'
-```
-
-1. Sign in to `play.qobuz.com` with your own account.
-2. Open browser developer tools → Network → Fetch/XHR, then reload the page.
-3. Find the Qobuz `user/login` or `user/get` request. In its response, look for your account's
-   `user.id` (or `id` for `user/get`) and `user_auth_token`. The token may also be in the
-   `X-User-Auth-Token` request header.
-4. Put those values in your private `.env`, then run `docker compose up -d --build`
-   after updating the code. Subsequent token-only updates need `docker compose up -d --force-recreate`.
-
-In token mode, email/password and manual app keys are not required; web-client parameters
-are still discovered automatically. A valid eligible account is still required.
-Tokens are credentials: do not share them in chat, screenshots, HAR exports, logs or commits.
-The worker stores its private Orpheus configuration with restrictive permissions.
-If the session expires, renew it from your browser; the application does not acquire someone else's session.
 
 ## Search Qobuz tracks
 
@@ -306,60 +278,18 @@ See each upstream distribution for full license/copyright notices.
 Pinned JavaScript dependencies are recorded in `package-lock.json`;
 Python dependencies are recorded in `requirements-orpheus.lock`.
 
-### Generate a safe login diagnostic report
-
-After pulling the latest code, run from the project directory:
+## Safe session diagnostics
 
 ```sh
-docker compose build qws-dl
 docker compose run --rm --no-deps --entrypoint node qws-dl /app/scripts/diagnose-qobuz.mjs
-```
-
-This creates a temporary container using the current `.env`, even if the running
-application has older variables. Without Docker, install the runtime with
-`npm run setup:orpheus`, then run `npm run diagnose:qobuz`; Node loads `.env`
-without executing it as shell code. Existing environment variables take precedence.
-In web mode, an automatically saved OAuth session is passed to the diagnostic as token mode.
-
-The script uses the application's selected authentication mode and reports only
-whether required variables exist, fixed request stages, HTTP status codes and a
-result category. It suppresses library output, response bodies and exception text;
-email, password, password hash, tokens, client keys and URLs are never printed.
-It does not change Orpheus configuration or download media. Web/token mode also
-checks signing through the client library's file-URL request, without fetching audio.
-
-Exit status is `0` on success and `1` on failure. `login_rejected_401` means the login
-request was rejected, not necessarily that the password is wrong; `network_error`
-indicates a transport failure, `dependencies_missing` an incomplete runtime, and
-`authentication_or_client_error` a client/discovery/subscription/signing failure.
-You can share the resulting JSON report for troubleshooting. Never share `.env`.
-
-The legacy request comparison remains available for protocol investigation. It does not
-restore Qobuz’s discontinued password flow; use browser sign-in to connect your account:
-
-```sh
-docker compose run --rm --no-deps --entrypoint node qws-dl /app/scripts/diagnose-qobuz.mjs --compare-password-login
 # Without Docker:
-npm run diagnose:qobuz -- --compare-password-login
+npm run diagnose:qobuz
 ```
 
-Requires `QOBUZ_AUTH_MODE=web`. This explicit diagnostic makes up to four login
-attempts using the same credentials: POST email/MD5, GET email/MD5 (as used by the
-upstream library), POST username/MD5, and POST email/original password over HTTPS.
-It stops at the first success or any failure other than login 401, including rate
-limiting and network errors. Run it once, not in a loop. It reports `working_variant`
-only after login and signing succeed. These alternatives are diagnostic probes,
-not confirmed fixes; normal application login remains unchanged. GET places email
-and the password hash in the HTTPS request query; upstream/proxy access logs may
-record that query. The diagnostic report never includes it or other secrets.
-
-### Compare the container password with hidden input
-
-If a fresh browser login succeeds, this local check compares the typed password with the
-container environment. Input is hidden; only the comparison result is printed:
-
-```sh
-docker compose exec qws-dl /opt/runtime/venv/bin/python -c 'import getpass,hmac,os; p=getpass.getpass("Qobuz password: "); v=os.environ.get("QOBUZ_PASSWORD", ""); print("MATCH" if v and hmac.compare_digest(p.encode(),v.encode()) else "DIFFERENT")'
-```
-
-If it prints `DIFFERENT`, check `.env` quoting and recreate the container. This check does not apply to token mode.
+The diagnostic uses only the saved OAuth session. It reports presence, fixed request
+stages, HTTP statuses and a result category. No email, password, token, client key,
+URL, response body or upstream exception text is printed. It does not modify the
+session/configuration or download audio. A successful check validates the current
+session and signing; it does not establish how long Qobuz will continue accepting it.
+Exit status is 0 on success, 1 on failure. You can share the JSON for troubleshooting.
+Legacy password-comparison options were removed along with the old authentication modes.

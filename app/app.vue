@@ -21,9 +21,10 @@ type Status = {
   missing: string[];
   ready: boolean;
   quality: string;
-  authMode: "web" | "mobile" | "token";
   retentionHours: number;
   oauthConnected: boolean;
+  sessionNeedsLogin: boolean;
+  lastRefreshedAt: string | null;
 };
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/?$/, "/");
 const api = $fetch.create({ baseURL });
@@ -62,14 +63,6 @@ const quality = ref("hifi");
 const retentionHours = ref(24);
 const status = ref<Status | null>(null);
 const qobuzResult = ref('');
-const credentialNames = computed(() => [
-  ...(status.value?.authMode === "token"
-    ? ["QOBUZ_USER_ID", "QOBUZ_AUTH_TOKEN"]
-    : status.value?.authMode === 'mobile' ? ["QOBUZ_USERNAME", "QOBUZ_PASSWORD"] : []),
-  ...(status.value?.authMode === "mobile"
-    ? ["QOBUZ_APP_ID", "QOBUZ_APP_SECRET"]
-    : []),
-]);
 const jobs = ref<Job[]>([]);
 const selectedJob = ref<string | null>(null);
 const activeJobs = computed(() =>
@@ -630,7 +623,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         >{{ status?.ready ? "Настроен" : "Не настроен" }}</span
                       >
                     </div>
-                    <QobuzConnection :connected="status?.oauthConnected || false" :result="qobuzResult" :mode="status?.authMode || 'web'" />
+                    <QobuzConnection :connected="status?.oauthConnected || false" :result="qobuzResult" :needs-login="status?.sessionNeedsLogin || false" />
                     <div class="panel settings-list">
                       <div class="setting-row">
                         <span>OrpheusDL и модуль Qobuz</span
@@ -643,44 +636,15 @@ onBeforeUnmount(() => clearInterval(timer));
                         >
                       </div>
                       <div class="setting-row">
-                        <span>Способ входа</span
-                        ><span class="setting-value">{{
-                          status?.authMode === "mobile"
-                            ? "Мобильный API"
-                            : status?.authMode === "token"
-                              ? "Браузерная сессия"
-                              : "Сайт Qobuz"
-                        }}</span>
+                        <span>Способ входа</span><span class="setting-value">Сайт Qobuz</span>
                       </div>
-                      <div
-                        v-for="name in credentialNames"
-                        :key="name"
-                        class="setting-row"
-                      >
-                        <code>{{ name }}</code
-                        ><span
-                          class="setting-value"
-                          :class="
-                            status?.missing.includes(name)
-                              ? 'value-warning'
-                              : 'value-success'
-                          "
-                          ><AppIcon
-                            :name="
-                              status?.missing.includes(name) ? 'alert' : 'check'
-                            "
-                          />{{
-                            status?.missing.includes(name)
-                              ? "Не задано"
-                              : "Задано"
-                          }}</span
-                        >
+                      <div v-if="status?.lastRefreshedAt" class="setting-row">
+                        <span>Сессия обновлена</span><span class="setting-value">{{ date(status.lastRefreshedAt) }}</span>
                       </div>
                     </div>
                     <p class="section-note">
-                      Параметры задаются в <code>.env</code> на сервере. После
-                      изменения перезапустите приложение. После входа на сайте
-                      сессия сохраняется автоматически. Если она истечёт, войдите снова.
+                      Сессия обновляется автоматически. Если Qobuz запросит
+                      повторную проверку, войдите снова на сайте сервиса.
                     </p>
                     <p v-if="status && !status.installed" class="section-note">
                       Установка: <code>npm run setup:orpheus</code>.

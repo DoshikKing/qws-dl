@@ -23,14 +23,14 @@ class SearchTest(unittest.TestCase):
         self.assertNotIn('secret', str(result))
         self.assertEqual(track_results({'tracks': {'items': [], 'total': 0}}, 0)['tracks'], [])
 
-    def test_mobile_search_authenticates_without_loading_or_writing_orpheus_settings(self):
+    def test_search_uses_oauth_adapter_without_orpheus_settings(self):
         api = Mock()
         api.app_id = 'fixture-app'
         api._get.return_value = {'tracks': {'items': [], 'total': 0}}
-        with patch.dict(os.environ, {'QOBUZ_AUTH_MODE':'mobile', 'QOBUZ_APP_ID':'fixture-app', 'QOBUZ_APP_SECRET':'fixture-secret', 'QOBUZ_USERNAME':'fixture', 'QOBUZ_PASSWORD':'fixture-password'}), patch('modules.qobuz.qobuz_api.Qobuz', return_value=api) as legacy:
+        with patch('search_qobuz.web_api_class') as adapter:
+            adapter.return_value.return_value = api
             self.assertEqual(search_tracks('  запрос  ', 0)['tracks'], [])
-            legacy.assert_called_once_with('fixture-app', 'fixture-secret', RuntimeError)
-            api.login.assert_called_once_with('fixture', 'fixture-password')
+            api.login.assert_not_called()
             api._get.assert_called_once_with('catalog/search', {'query':'запрос', 'type':'tracks', 'limit':20, 'offset':0, 'app_id':'fixture-app'})
         for query, offset in [('', 0), ('x'*201, 0), ('q', -1), ('q', 1), ('q', 1000)]:
             with self.assertRaises(ValueError):

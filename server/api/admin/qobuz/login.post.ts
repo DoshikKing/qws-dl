@@ -6,7 +6,6 @@ export default defineEventHandler(async event => {
   requireAdmin(event);
   limitAuth();
   const settings = config();
-  if (settings.authMode !== 'web') throw createError({ statusCode: 400, statusMessage: 'Для входа на сайте установите QOBUZ_AUTH_MODE=web.' });
   const base = useRuntimeConfig(event).app.baseURL.replace(/\/?$/, '/');
   const requestURL = getRequestURL(event, { xForwardedProto: true });
   const callback = new URL(base + 'api/qobuz/callback', requestURL.origin);

@@ -16,12 +16,8 @@ def main():
     root, url, quality = Path(sys.argv[1]).resolve(), sys.argv[2], sys.argv[3]
     os.chdir(root)
     sys.path.insert(0, str(root))
-    auth_mode = os.environ.get('QOBUZ_AUTH_MODE', 'web')
-    if auth_mode not in {'web', 'mobile', 'token'}:
-        raise ValueError('QOBUZ_AUTH_MODE must be web, token or mobile')
-    if auth_mode in {'web', 'token'}:
-        from qobuz_web import install_web_api
-        install_web_api()
+    from qobuz_web import install_web_api
+    install_web_api()
     os.umask(0o077)
     config_dir = root / 'config'
     config_dir.mkdir(mode=0o700, exist_ok=True)
@@ -41,18 +37,10 @@ def main():
         'track_filename_format': '{track_number}. {artist} - {name}',
         'single_full_path_format': '{artist} - {name}',
     })
-    for field in ('username', 'password', 'app_id', 'app_secret'):
-        value = os.environ.get('QOBUZ_' + field.upper(), '')
-        if auth_mode == 'token' and field in {'username', 'password'}:
-            name = 'QOBUZ_USER_ID' if field == 'username' else 'QOBUZ_AUTH_TOKEN'
-            value = os.environ.get(name, '')
-            if not value:
-                raise ValueError('Missing ' + name)
-        elif auth_mode in {'web', 'token'} and field in {'app_id', 'app_secret'}:
-            value = ''
-        elif not value:
-            raise ValueError('Missing QOBUZ_' + field.upper())
-        settings['modules']['qobuz'][field] = value
+    user_id, token = os.environ.get('QOBUZ_USER_ID'), os.environ.get('QOBUZ_AUTH_TOKEN')
+    if not user_id or not token:
+        raise QobuzWebError('Войдите в Qobuz через Настройки → Qobuz.')
+    settings['modules']['qobuz'].update(username=user_id, password=token, app_id='', app_secret='')
     config_path.chmod(0o600)
     config_path.write_text(json.dumps(settings, indent=2))
 

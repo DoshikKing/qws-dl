@@ -42,15 +42,7 @@ def search_tracks(query, offset):
     if not isinstance(offset, int) or offset < 0 or offset > 980 or offset % PAGE_SIZE:
         raise ValueError('Invalid offset')
     from modules.qobuz.qobuz_api import Qobuz
-    mode = os.environ.get('QOBUZ_AUTH_MODE') or 'web'
-    if mode in {'web', 'token'}:
-        api = web_api_class(Qobuz)('', '', RuntimeError)
-        # The web adapter authenticates lazily, including explicit browser-token mode.
-    elif mode == 'mobile':
-        api = Qobuz(os.environ['QOBUZ_APP_ID'], os.environ['QOBUZ_APP_SECRET'], RuntimeError)
-        api.login(os.environ['QOBUZ_USERNAME'], os.environ['QOBUZ_PASSWORD'])
-    else:
-        raise ValueError('Invalid auth mode')
+    api = web_api_class(Qobuz)('', '', RuntimeError)
     data = api._get('catalog/search', {
         'query': query.strip(), 'type': 'tracks', 'limit': PAGE_SIZE,
         'offset': offset, 'app_id': api.app_id,

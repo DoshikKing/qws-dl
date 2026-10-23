@@ -13,6 +13,12 @@ export function oauthWorker(settings, payload) {
         children.delete(child);
         try {
           const value = JSON.parse(stdout);
+          if (value?.error === 'session_expired') {
+            const expired = new Error('Войдите снова в Qobuz.');
+            expired.code = 'session_expired';
+            reject(expired);
+            return;
+          }
           if (error || !value || value.error) throw new Error();
           done(value);
         } catch { reject(new Error('Не удалось выполнить вход в Qobuz. Повторите вход на сайте Qobuz.')); }

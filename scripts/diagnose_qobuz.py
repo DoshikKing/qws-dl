@@ -1,6 +1,5 @@
 """Check the application's Qobuz login; emit only allowlisted diagnostics."""
 import contextlib
-import argparse
 import json
 import logging
 import os
@@ -10,25 +9,10 @@ from unittest.mock import patch
 from urllib.parse import urlsplit
 
 
-PASSWORD_VARIANTS = ('post_email_md5', 'get_email_md5', 'post_username_md5', 'post_email_plain')
-
-
-def diagnose(password_variant=None):
-    report = {'mode': 'invalid', 'configured': {}, 'requests': [], 'result': 'configuration_error'}
-    mode = os.environ.get('QOBUZ_AUTH_MODE') or 'web'
-    if mode not in {'web', 'token', 'mobile'}:
-        return report
-    report['mode'] = mode
-    if password_variant is not None:
-        if mode != 'web' or password_variant not in PASSWORD_VARIANTS:
-            return report
-        report['password_variant'] = password_variant
-    required = (['QOBUZ_USER_ID', 'QOBUZ_AUTH_TOKEN'] if mode == 'token' else
-                ['QOBUZ_USERNAME', 'QOBUZ_PASSWORD'])
-    if mode == 'mobile':
-        required += ['QOBUZ_APP_ID', 'QOBUZ_APP_SECRET']
-    report['configured'] = {key: bool(os.environ.get(key)) for key in required}
-    if not all(report['configured'].values()):
+def diagnose():
+    report = {'mode': 'oauth', 'sessionSaved': bool(os.environ.get('QOBUZ_USER_ID') and os.environ.get('QOBUZ_AUTH_TOKEN')),
+              'requests': [], 'result': 'session_missing'}
+    if not report['sessionSaved']:
         return report
 
     previous_logging = logging.root.manager.disable
@@ -51,18 +35,6 @@ def diagnose(password_variant=None):
                 elif parsed.hostname == 'www.qobuz.com':
                     stage = {'/api.json/0.2/user/login': 'login',
                              '/api.json/0.2/track/getFileUrl': 'signing_check'}.get(parsed.path, 'other')
-                if stage == 'login' and password_variant is not None:
-                    params = dict(kwargs['data'])
-                    if password_variant == 'get_email_md5':
-                        method = 'GET'
-                        del kwargs['data']
-                        kwargs['params'] = params
-                    elif password_variant == 'post_username_md5':
-                        params['username'] = params.pop('email')
-                        kwargs['data'] = params
-                    elif password_variant == 'post_email_plain':
-                        params['password'] = os.environ['QOBUZ_PASSWORD']
-                        kwargs['data'] = params
                 entry = {'stage': stage}
                 report['requests'].append(entry)
                 kwargs.setdefault('timeout', 30)
@@ -75,11 +47,8 @@ def diagnose(password_variant=None):
                 return response
 
             with patch.object(requests.sessions.Session, 'request', observed):
-                if mode == 'mobile':
-                    api = Qobuz(os.environ['QOBUZ_APP_ID'], os.environ['QOBUZ_APP_SECRET'], RuntimeError)
-                else:
-                    api = web_api_class(Qobuz)('', '', RuntimeError)
-                api.login(os.environ.get('QOBUZ_USERNAME', ''), os.environ.get('QOBUZ_PASSWORD', ''))
+                api = web_api_class(Qobuz)('', '', RuntimeError)
+                api.login('', '')
             report['result'] = 'ok'
         except ImportError:
             report['result'] = 'dependencies_missing'
@@ -94,23 +63,11 @@ def diagnose(password_variant=None):
     return report
 
 
-def compare_password_login():
-    """Explicit diagnostic only: stop on success or any failure other than 401."""
-    attempts = []
-    for variant in PASSWORD_VARIANTS:
-        report = diagnose(variant)
-        attempts.append(report)
-        if report['result'] != 'login_rejected_401':
-            break
-    return {'attempts': attempts, 'result': report['result'],
-            'working_variant': variant if report['result'] == 'ok' else None}
-
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--compare-password-login', action='store_true',
-                        help='Compare up to four login formats; web mode only. Stops on success or a non-401 failure.')
-    args = parser.parse_args()
-    result = compare_password_login() if args.compare_password_login else diagnose()
+    if len(sys.argv) != 1:
+        print('{"error":"Unsupported diagnostic option. Use npm run diagnose:qobuz."}')
+        raise SystemExit(2)
+    result = diagnose()
     print(json.dumps(result, indent=2))
     raise SystemExit(0 if result['result'] == 'ok' else 1)

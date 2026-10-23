@@ -15,14 +15,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 
-for (const [prefix, mode] of [
-  ["/", "web"],
-  ["/dl/", "web"],
-  ["/dl", "web"],
-  ["/music/dl/", "web"],
-  ["/dl/", "token"],
-]) {
-  test(`production HTTP (${prefix}, ${mode}): login → queue → Python runner → files, failure, cancellation and restart`, async () => {
+for (const prefix of ['/', '/dl/', '/dl', '/music/dl/']) {
+  test(`production HTTP (${prefix}, OAuth): login → queue → Python runner → files, failure, cancellation and restart`, async () => {
     // This fixture exercises our bridge and queue without pretending to authenticate with live Qobuz.
     const base = await mkdtemp(join(tmpdir(), "qws-http-"));
     const root = join(base, "orpheus");
@@ -68,11 +62,11 @@ for (const [prefix, mode] of [
           ADMIN_USERNAME: "admin",
           ADMIN_PASSWORD: "test-interface-password",
           USER_INVITE_LIMIT: "1",
-          QOBUZ_USERNAME: mode === "web" ? "test-account" : "",
-          QOBUZ_PASSWORD: mode === "web" ? "test-account-secret" : "",
-          QOBUZ_AUTH_MODE: mode,
-          QOBUZ_USER_ID: mode === "token" ? "12345" : "",
-          QOBUZ_AUTH_TOKEN: mode === "token" ? "test-session-secret" : "",
+          QOBUZ_USERNAME: "retired-account",
+          QOBUZ_PASSWORD: "retired-secret",
+          QOBUZ_AUTH_MODE: "mobile",
+          QOBUZ_USER_ID: "retired-user",
+          QOBUZ_AUTH_TOKEN: "retired-token",
           QOBUZ_APP_ID: "",
           QOBUZ_APP_SECRET: "",
           ORPHEUS_DIR: root,
@@ -134,7 +128,7 @@ if sys.argv[-1].endswith('/2'):
 elif sys.argv[-1].endswith('/3'):
     time.sleep(60)
 else:
-    print(os.environ.get('QOBUZ_AUTH_TOKEN') or os.environ['QOBUZ_PASSWORD'])
+    print(os.environ['QOBUZ_AUTH_TOKEN'])
     Path(os.environ['DOWNLOAD_DIR'], 'Исполнитель - Название.flac').write_bytes(b'fixture-audio')
 `,
       );
@@ -153,7 +147,7 @@ if len(sys.argv)>1 and sys.argv[1].endswith('qobuz_oauth.py'):
 elif len(sys.argv)>1 and sys.argv[1].endswith('search_qobuz.py'):
     query, offset = sys.argv[3], int(sys.argv[4])
     if query == 'oauth-session':
-        assert os.environ['QOBUZ_AUTH_MODE']=='token'
+        assert 'QOBUZ_AUTH_MODE' not in os.environ
         assert os.environ['QOBUZ_AUTH_TOKEN']=='fixture-oauth-session'
     if query == 'service-error':
         print(json.dumps({'error':'Fixture search unavailable'}));sys.exit(1)
@@ -164,6 +158,8 @@ else:
 `,
         { mode: 0o700 },
       );
+      await mkdir(join(base, 'data'), { recursive: true });
+      await writeFile(join(base, 'data/qobuz-session.json'), JSON.stringify({ userId: '12345', authToken: 'test-session-secret', updatedAt: new Date().toISOString() }));
       await start();
       assert.equal((await api('/api/admin/qobuz/login', 'POST')).status, 401);
       assert.equal(
@@ -246,11 +242,11 @@ else:
       );
       assert.equal(
         settings.modules.qobuz.username,
-        mode === "token" ? "12345" : "test-account",
+        "12345",
       );
       assert.equal(
         settings.modules.qobuz.password,
-        mode === "token" ? "test-session-secret" : "test-account-secret",
+        "test-session-secret",
       );
       assert.equal(
         settings.global.formatting.single_full_path_format,
@@ -360,7 +356,7 @@ else:
       assert.equal((await (await api("/api/files")).json()).files.length, 0);
       assert.ok((await jobs()).find((job) => job.id === first.id).expiredAt);
       await assert.rejects(access(join(base, "downloads", first.id)));
-      if (mode === 'web') {
+      {
         const forbidden = await fetch(origin + '/api/admin/qobuz/login', {
           method: 'POST', headers: { cookie, origin: 'https://other.example' },
         });
@@ -378,7 +374,7 @@ else:
         const invalid = await fetch(redirect, { redirect: 'manual' });
         assert.equal(invalid.status, 303);
         assert.ok(invalid.headers.get('location').endsWith('?qobuz=failed'));
-        await assert.rejects(access(join(base, 'data/qobuz-session.json')));
+        assert.equal(JSON.parse(await readFile(join(base, 'data/qobuz-session.json'), 'utf8')).userId, '12345');
         // Cross-site navigation lacks the Strict app cookie; the temporary Lax cookie binds it instead.
         const callback = await fetch(redirect, { headers: { cookie: flowCookie }, redirect: 'manual' });
         assert.equal(callback.status, 303);
@@ -398,8 +394,8 @@ else:
         const oauthSettings = JSON.parse(await readFile(join(root, 'config/settings.json'), 'utf8'));
         assert.equal(oauthSettings.modules.qobuz.username, '777');
         assert.equal(oauthSettings.modules.qobuz.password, 'fixture-oauth-session');
-      } else assert.equal((await api('/api/admin/qobuz/login', 'POST')).status, 400);
-      if (prefix === "/" && mode === "web") {
+      }
+      if (prefix === "/") {
         const adminCookie = cookie;
         const admin = await (await api("/api/account")).json();
         assert.equal(admin.role, "admin");

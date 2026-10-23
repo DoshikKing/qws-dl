@@ -4,7 +4,7 @@ export default defineEventHandler(async (event) => {
   if (!ready.ready)
     throw createError({
       statusCode: 503,
-      statusMessage: "Настройте OrpheusDL и данные Qobuz в .env.",
+      statusMessage: "Установите OrpheusDL и войдите в Qobuz через настройки.",
     });
   const body = await readBody(event);
   try {

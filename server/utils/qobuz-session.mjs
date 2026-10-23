@@ -3,6 +3,9 @@ import { resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 const sessionPath = (data) => join(resolve(data || process.env.DATA_DIR || 'data'), 'qobuz-session.json');
+// Retired public settings are ignored, including values left in an existing .env.
+export const retiredQobuzVariables = ['QOBUZ_AUTH_MODE', 'QOBUZ_USERNAME', 'QOBUZ_PASSWORD',
+  'QOBUZ_USER_ID', 'QOBUZ_AUTH_TOKEN', 'QOBUZ_APP_ID', 'QOBUZ_APP_SECRET'];
 export function readQobuzSession(data) {
   try {
     const session = JSON.parse(readFileSync(sessionPath(data), 'utf8'));
@@ -16,12 +19,19 @@ export function saveQobuzSession(session, data) {
   mkdirSync(resolve(file, '..'), { recursive: true, mode: 0o700 });
   const temp = `${file}.${randomUUID()}.tmp`;
   try {
-    writeFileSync(temp, JSON.stringify({ userId: session.userId, authToken: session.authToken }), { mode: 0o600, flag: 'wx' });
+    writeFileSync(temp, JSON.stringify({ userId: session.userId, authToken: session.authToken,
+      updatedAt: session.updatedAt || new Date().toISOString(), needsLogin: !!session.needsLogin }), { mode: 0o600, flag: 'wx' });
     renameSync(temp, file);
   } finally { rmSync(temp, { force: true }); }
 }
 export function qobuzEnvironment(data) {
-  const session = (process.env.QOBUZ_AUTH_MODE || 'web') === 'web' && readQobuzSession(data);
-  return session ? { ...process.env, QOBUZ_AUTH_MODE: 'token',
-    QOBUZ_USER_ID: session.userId, QOBUZ_AUTH_TOKEN: session.authToken } : { ...process.env };
+  const env = { ...process.env };
+  for (const name of retiredQobuzVariables) delete env[name];
+  const session = readQobuzSession(data);
+  // Internal worker credentials only; never read these from the user's .env.
+  if (session && !session.needsLogin) {
+    env.QOBUZ_USER_ID = session.userId;
+    env.QOBUZ_AUTH_TOKEN = session.authToken;
+  }
+  return env;
 }
