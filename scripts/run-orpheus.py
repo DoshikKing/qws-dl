@@ -69,6 +69,13 @@ def main():
     sys.stdout = output
     sys.argv = ['orpheus.py', '-o', os.environ['DOWNLOAD_DIR'], url]
     runpy.run_path(str(root / 'orpheus.py'), run_name='__main__')
+    if os.environ.get('QWS_LYRICS') == '1':
+        try:
+            from lyrics import enrich_downloads
+            enrich_downloads(os.environ['DOWNLOAD_DIR'], os.environ.get('QWS_LYRICS_CACHE', ''))
+        except Exception:
+            # Optional enrichment must never turn a successful music download into a failure.
+            print('Не удалось добавить тексты; аудиофайлы сохранены.', flush=True)
     if output.failed:
         raise SystemExit(2)
 

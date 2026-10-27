@@ -20,6 +20,7 @@ const props = defineProps<{
 }>();
 const quality = defineModel<string>("quality", { required: true });
 const retention = defineModel<number>("retentionHours", { required: true });
+const lyrics = defineModel<boolean>("lyrics", { required: true });
 const emit = defineEmits<{ queued: [] }>();
 const api = $fetch.create({
   baseURL: useRuntimeConfig().app.baseURL.replace(/\/?$/, "/"),
@@ -112,6 +113,7 @@ async function addSelected() {
           url: track.url,
           quality: quality.value,
           retentionHours: retention.value,
+          lyrics: lyrics.value,
         },
       });
       queued.value.push(id);
@@ -283,6 +285,10 @@ async function addSelected() {
             }}
           </button>
         </div>
+        <label class="lyrics-option">
+          <input v-model="lyrics" type="checkbox" :disabled="busy" />
+          <span>Добавлять тексты песен<span class="field-note">Синхронизированный текст и файл .lrc, если найдены.</span></span>
+        </label>
         <p class="field-note">
           Каждый трек — отдельное задание и ZIP. Архив хранится
           {{ retention }} ч после завершения.

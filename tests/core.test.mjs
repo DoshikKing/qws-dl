@@ -138,6 +138,7 @@ test("worker serializes processes, handles failures and cancels a running job", 
       `
       import {writeFileSync} from 'node:fs';
       console.log('Started test-secret https://qobuz.com/?token=private');
+      console.log('Lyrics: '+process.env.QWS_LYRICS);
       if (process.argv[3].endsWith('/3')) setTimeout(()=>{},10000);
       else setTimeout(()=>{
         if (process.argv[3].endsWith('/2')) { console.error('Download failed'); process.exit(2) }
@@ -161,7 +162,7 @@ test("worker serializes processes, handles failures and cancels a running job", 
     });
     await writeFile(join(base, 'data/qobuz-session.json'), JSON.stringify({ userId: '12345', authToken: 'test-secret' }));
     const first = queue.add("https://open.qobuz.com/track/1", "hifi");
-    const second = queue.add("https://open.qobuz.com/track/2", "lossless");
+    const second = queue.add("https://open.qobuz.com/track/2", "lossless", 24, null, true);
     assert.equal(first.status, "running");
     assert.equal(second.status, "queued");
     await waitFor(() => second.status === "failed");
@@ -169,6 +170,10 @@ test("worker serializes processes, handles failures and cancels a running job", 
     assert.ok(!first.log.includes("test-secret"));
     assert.ok(!first.log.includes("https://"));
     assert.equal(first.hasFiles, true);
+    assert.equal(first.lyrics, false);
+    assert.equal(second.lyrics, true);
+    assert.ok(first.log.includes("Lyrics: 0"));
+    assert.ok(second.log.includes("Lyrics: 1"));
     assert.deepEqual(await readdir(queue.folder(first)), [".qws-archive.zip"]);
     await assert.rejects(access(join(queue.folder(first), "test.flac")));
     const third = queue.add("https://open.qobuz.com/track/3", "high");
@@ -201,6 +206,8 @@ test("retention is limited to 24 hours and expiration removes only the job's fil
       assert.throws(() =>
         queue.add("https://open.qobuz.com/track/1", "hifi", hours),
       );
+    for (const lyrics of ["true", 1, {}, []])
+      assert.throws(() => queue.add("https://open.qobuz.com/track/1", "hifi", 24, null, lyrics));
     const expired = queue.add("https://open.qobuz.com/track/1", "hifi", 1);
     const active = queue.add("https://open.qobuz.com/track/2", "hifi", 24);
     expired.status = "completed";

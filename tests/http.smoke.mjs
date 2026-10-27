@@ -218,11 +218,15 @@ else:
           .status,
         400,
       );
+      assert.equal((await api('/api/jobs', 'POST', {
+        url: catalog.tracks[0].url, lyrics: 'true',
+      })).status, 400);
       const first = await (
         await api("/api/jobs", "POST", {
           url: catalog.tracks[0].url,
           quality: "lossless",
           retentionHours: 1,
+          lyrics: true,
         })
       ).json();
       await until(
@@ -232,6 +236,8 @@ else:
       );
       const finished = (await jobs()).find((job) => job.id === first.id);
       assert.equal(finished.retentionHours, 1);
+      assert.equal(finished.lyrics, true);
+      assert.ok(finished.log.includes("Не удалось добавить текст; аудиофайл сохранён."));
       assert.equal(finished.title, "Исполнитель - Название");
       assert.equal(
         Date.parse(finished.expiresAt) - Date.parse(finished.finishedAt),

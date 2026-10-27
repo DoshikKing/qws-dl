@@ -1775,3 +1775,30 @@ a.item-title:hover {
     border: 1px solid Highlight;
   }
 }
+
+.lyrics-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  margin-top: 12px;
+  cursor: pointer;
+}
+.lyrics-option input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  accent-color: var(--accent);
+}
+.lyrics-option .field-note {
+  display: block;
+  margin: 4px 0 0;
+}
+
+.lyrics-option input:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
+.lyrics-option:has(input:disabled) {
+  cursor: default;
+}

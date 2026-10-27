@@ -49,3 +49,30 @@ relicense upstream code. See [dependency and license details](INFO.md#dependenci
 and the lockfiles for exact versions and transitive dependencies.
 
 UI development follows [DESIGN.md](DESIGN.md); repository instructions are in [AGENTS.md](AGENTS.md).
+
+## Lyrics (LRCLIB)
+
+Enable **Добавлять тексты песен** when adding links or tracks from search.
+New jobs look up lyrics using only the downloaded track's artist, title, album
+and duration. Audio and Qobuz credentials are never sent to LRCLIB. No API key
+or additional Python dependency is needed. Allow outbound HTTPS to `lrclib.net`.
+
+Only matching metadata and durations within two seconds are accepted; no fuzzy
+search or automatic alternate-version matching is performed. Instrumentals and
+missing lyrics are skipped. Synced lyrics take priority; ordinary lyrics are
+used when timestamps are unavailable or invalid.
+
+Before ZIP creation, FLAC/Vorbis/Opus files receive `LYRICS` and `SYNCEDLYRICS`,
+MP3 receives ID3 `USLT` and `SYLT` (millisecond timestamps), and M4A receives
+ordinary lyrics in `©lyr`. Synced tracks also include a UTF-8 `.lrc` file with
+the same basename. Embedded synchronized lyrics support depends on the player;
+the sidecar provides an additional compatibility option. Existing tags and audio
+are preserved; tagging is performed on a temporary copy and replaced atomically.
+Files without sufficient metadata or space for a safe copy are skipped.
+
+Requests run serially with connection/read timeouts, redirects disabled and a
+1 MiB response cap. Three consecutive failures stop further requests for the
+job. Public results are cached in `DATA_DIR/lyrics.sqlite3` for 30 days, misses
+for one day, with at most 512 entries of up to 128 KiB each (plus a 64-entry per-worker memory cache).
+Network errors are not cached. Lyrics failures do not fail music downloads;
+the job log records the outcome. Existing ZIP archives are not modified.

@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
       body?.quality || ready.quality,
       body?.retentionHours ?? ready.retentionHours,
       user.id,
+      body?.lyrics ?? false,
     );
   } catch (error) {
     throw createError({

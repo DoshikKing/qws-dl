@@ -200,7 +200,9 @@ export class DownloadQueue {
     quality,
     retentionHours = this.settings.retentionHours || 24,
     userId = null,
+    lyrics = false,
   ) {
+    if (typeof lyrics !== "boolean") throw new Error("Параметр текстов должен быть логическим значением.");
     url = normalizeUrl(url);
     if (!qualities.includes(quality)) throw new Error("Неизвестное качество.");
     if (
@@ -231,6 +233,7 @@ export class DownloadQueue {
       userId,
       url,
       quality,
+      lyrics,
       status: "queued",
       createdAt: new Date().toISOString(),
       log: "",
@@ -332,6 +335,8 @@ export class DownloadQueue {
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...environment, DOWNLOAD_DIR: folder, PYTHONUNBUFFERED: "1",
+          QWS_LYRICS: job.lyrics === true ? "1" : "0",
+          QWS_LYRICS_CACHE: join(this.settings.data, "lyrics.sqlite3"),
           MAX_JOB_BYTES: String(byteLimit),
           MIN_FREE_BYTES: String(this.settings.minFreeBytes ?? 1024 ** 3) },
       },

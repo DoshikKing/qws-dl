@@ -61,6 +61,7 @@ const url = ref("");
 const inputMode = ref<"link" | "search">("link");
 const quality = ref("hifi");
 const retentionHours = ref(24);
+const lyrics = ref(false);
 const status = ref<Status | null>(null);
 const qobuzResult = ref('');
 const jobs = ref<Job[]>([]);
@@ -178,6 +179,7 @@ async function addJob() {
         url: url.value,
         quality: quality.value,
         retentionHours: retentionHours.value,
+        lyrics: lyrics.value,
       },
     });
     url.value = "";
@@ -427,6 +429,10 @@ onBeforeUnmount(() => clearInterval(timer));
                           }}
                         </button>
                       </div>
+                      <label class="lyrics-option">
+                        <input v-model="lyrics" type="checkbox" :disabled="busy" />
+                        <span>Добавлять тексты песен<span class="field-note">Синхронизированный текст и файл .lrc, если найдены.</span></span>
+                      </label>
                       <p class="field-note">
                         ZIP удалится через {{ retentionHours }} ч после
                         завершения.
@@ -434,6 +440,7 @@ onBeforeUnmount(() => clearInterval(timer));
                     </form>
                     <QobuzSearch
                       v-else
+                      v-model:lyrics="lyrics"
                       v-model:quality="quality"
                       v-model:retention-hours="retentionHours"
                       :qualities="qualities"
