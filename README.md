@@ -2,7 +2,7 @@
 
 [Русская версия](README.ru.md) · [Setup and configuration](INFO.md)
 
-A Nuxt web interface for OrpheusDL and its Qobuz module. Search Qobuz tracks or queue media links,
+A Nuxt web interface for OrpheusDL and its Qobuz module. Search Qobuz tracks, albums and artists with cover art, or queue media links,
 choose audio quality, view logs, cancel jobs, and download completed jobs as ZIP archives.
 Accounts are invitation-only; each user has a personal invite code and an invitation limit.
 The administrator manages accounts and can delete downloads from Storage.
@@ -76,3 +76,15 @@ job. Public results are cached in `DATA_DIR/lyrics.sqlite3` for 30 days, misses
 for one day, with at most 512 entries of up to 128 KiB each (plus a 64-entry per-worker memory cache).
 Network errors are not cached. Lyrics failures do not fail music downloads;
 the job log records the outcome. Existing ZIP archives are not modified.
+
+## Catalog search
+
+The Tracks, Albums and Artists tabs share the query and keep separate results,
+selections and pagination. Changing tabs searches automatically when needed;
+returning to cached results does not repeat the request. Use arrow keys, Home
+and End to navigate the tabs. Artwork is loaded lazily from public HTTPS URLs
+on `static.qobuz.com`, without a referrer, with a fallback for missing or broken images.
+Albums show their release year and track count when supplied by Qobuz. Artists
+show their photograph and album count when available. Selecting an artist queues
+their entire available discography in one job, as stated in the interface.
+Quality, retention and the optional LRCLIB lyrics setting apply to every type.

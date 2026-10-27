@@ -1,6 +1,6 @@
 import { readJsonBody } from "../utils/request";
 import { config, readiness } from "../utils/queue.mjs";
-import { searchRequest, searchTracks, SearchError } from "../utils/search.mjs";
+import { searchRequest, searchCatalog, SearchError } from "../utils/search.mjs";
 export default defineEventHandler(async (event) => {
   const body = await readJsonBody(event);
   try {
@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
         "Поиск недоступен. Настройте подключение Qobuz на сервере.",
         503,
       );
-    return await searchTracks(settings, event.context.user.id, request);
+    return await searchCatalog(settings, event.context.user.id, request);
   } catch (error) {
     const statusCode = error instanceof SearchError ? error.statusCode : 503;
     const message =

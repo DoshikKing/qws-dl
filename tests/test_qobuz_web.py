@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / 'scripts'))
 sys.path.insert(0, str(ROOT / '.runtime/orpheusdl'))
 from qobuz_web import web_api_class, QobuzWebError
 from modules.qobuz.qobuz_api import Qobuz
-from search_qobuz import search_tracks
+from search_qobuz import search_catalog
 from diagnose_qobuz import diagnose
 from qobuz_oauth import prepare, exchange, refresh
 
@@ -211,7 +211,7 @@ class WebLoginTest(unittest.TestCase):
                         getattr(self.api, method)('fixture')
 
     def test_search_uses_saved_session_and_pagination(self):
-        result = search_tracks('Песня & исполнитель', 20)
+        result = search_catalog('Песня & исполнитель', 20)
         self.assertEqual(result['tracks'][0]['url'], 'https://open.qobuz.com/track/42')
         self.assertEqual(result['tracks'][0]['artist'], 'Исполнитель')
         self.assertTrue(result['tracks'][0]['streamable'])

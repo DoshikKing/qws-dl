@@ -154,8 +154,12 @@ elif len(sys.argv)>1 and sys.argv[1].endswith('search_qobuz.py'):
         assert os.environ['QOBUZ_AUTH_TOKEN']=='fixture-oauth-session'
     if query == 'service-error':
         print(json.dumps({'error':'Fixture search unavailable'}));sys.exit(1)
+    kind = sys.argv[5]
     tracks = [{'id':'1','url':'https://open.qobuz.com/track/1','title':'Название','artist':'Исполнитель','album':'Альбом','duration':181,'streamable':True}]
-    print(json.dumps({'tracks':tracks,'total':21,'offset':offset,'hasMore':offset==0},ensure_ascii=False))
+    if kind != 'tracks':
+        media = {'albums':'album','artists':'artist'}[kind]
+        tracks = [{'id':'42','url':f'https://open.qobuz.com/{media}/42','title':'Название','cover':'https://static.qobuz.com/images/fixture.jpg','streamable':True}]
+    print(json.dumps({kind:tracks,'total':21,'offset':offset,'hasMore':offset==0},ensure_ascii=False))
 else:
     os.execv(${JSON.stringify(resolve(".runtime/venv/bin/python"))},[${JSON.stringify(resolve(".runtime/venv/bin/python"))},*sys.argv[1:]])
 `,
@@ -195,6 +199,7 @@ else:
         { query: "" },
         { query: "x".repeat(201) },
         { query: "q", offset: -1 },
+        { query: "q", type: "playlists" },
       ])
         assert.equal((await api("/api/search", "POST", body)).status, 400);
       const catalog = await (
@@ -203,6 +208,13 @@ else:
       assert.equal(catalog.tracks[0].url, "https://open.qobuz.com/track/1");
       assert.equal(catalog.tracks[0].artist, "Исполнитель");
       assert.equal(catalog.hasMore, true);
+      for (const [type, media] of [['albums', 'album'], ['artists', 'artist']]) {
+        const result = await (await api('/api/search', 'POST', { query: 'Запрос', type, offset: 20 })).json();
+        assert.equal(result[type][0].url, `https://open.qobuz.com/${media}/42`);
+        assert.equal(result[type][0].cover, 'https://static.qobuz.com/images/fixture.jpg');
+        assert.equal(result.offset, 20);
+      }
+
       const nextPage = await (
         await api("/api/search", "POST", { query: "Песня", offset: 20 })
       ).json();

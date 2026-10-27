@@ -16,9 +16,13 @@ export function searchRequest(body) {
     throw new SearchError("Введите запрос длиной от 1 до 200 символов.", 400);
   if (!Number.isInteger(offset) || offset < 0 || offset > 980 || offset % 20)
     throw new SearchError("Некорректная страница поиска.", 400);
-  return { query, offset };
+  const type = body?.type ?? "tracks";
+  if (!["tracks", "albums", "artists"].includes(type))
+    throw new SearchError("Выберите треки, альбомы или исполнителей.", 400);
+  return { query, offset, type };
 }
-export async function searchTracks(settings, userId, request) {
+export async function searchCatalog(settings, userId, request) {
+  request = searchRequest(request);
   if (running.has(userId) || running.size >= 2)
     throw new SearchError(
       "Поиск уже выполняется. Повторите запрос позже.",
@@ -32,6 +36,7 @@ export async function searchTracks(settings, userId, request) {
         settings.root,
         request.query,
         String(request.offset),
+        request.type,
       ],
       { timeout: 45_000, killSignal: "SIGKILL", maxBuffer: 256 * 1024, env: qobuzEnvironment(settings.data) },
       (error, stdout) => {
@@ -77,7 +82,7 @@ export async function searchTracks(settings, userId, request) {
           );
           return;
         }
-        if (!Array.isArray(result.tracks)) {
+        if (!Array.isArray(result[request.type])) {
           reject(
             new SearchError(
               "Qobuz вернул некорректные результаты поиска.",
