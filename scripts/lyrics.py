@@ -19,6 +19,7 @@ from mutagen.mp4 import MP4
 from mutagen.oggopus import OggOpus
 from mutagen.oggvorbis import OggVorbis
 import requests
+from worker_safety import read_audio_tags
 
 MAX_RESPONSE = 1024 * 1024
 USER_AGENT = 'QWS-DL/1.0 (https://github.com/DoshikKing/qws-dl)'
@@ -179,7 +180,7 @@ def enrich_downloads(directory, cache_path=''):
                 continue
             temporary = None
             try:
-                audio = mutagen.File(path)
+                audio = read_audio_tags(path)
                 if not isinstance(audio, (FLAC, MP3, MP4, OggVorbis, OggOpus)):
                     continue
                 artist, title, album = metadata(audio)
@@ -203,7 +204,7 @@ def enrich_downloads(directory, cache_path=''):
                 with tempfile.NamedTemporaryFile(prefix='.qws-lyrics-', suffix=path.suffix, dir=path.parent, delete=False) as handle:
                     temporary = Path(handle.name)
                 shutil.copyfile(path, temporary)
-                tag_audio(mutagen.File(temporary), lyrics)
+                tag_audio(read_audio_tags(temporary), lyrics)
                 used += temporary.stat().st_size - size
                 os.replace(temporary, path)
                 if lyrics['lrc']:

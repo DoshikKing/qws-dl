@@ -340,3 +340,14 @@ Uploads use `PYTHON_BIN` and the existing Python dependencies; no Qobuz login is
 required. Completed ZIPs use the same download authorization, restart recovery and
 automatic expiry as regular jobs. Only the shared public-lyrics cache may outlive
 the selected retention; uploaded audio and archives are never stored in that cache.
+
+### Upload parsing limits
+
+The upload worker has OS limits of 512 MiB address space and 30 CPU seconds, plus
+the queue's 90-second wall-clock timeout. ID3 tags are limited to 16 MiB encoded,
+8 MiB decoded per compressed frame and 16 MiB decoded across compressed frames
+per read. A rejected uploaded file is removed from the server without creating a ZIP.
+The guard also applies to optional LRCLIB tag reads on Qobuz downloads; enrichment
+errors preserve the downloaded audio. Compose adds an overall 2 GiB service cap
+(`WEB_MEMORY_LIMIT`); restart/recreate the container after changing this setting.
+See SECURITY.md for the remaining build-time dependency advisories.

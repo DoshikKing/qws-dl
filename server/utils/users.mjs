@@ -176,10 +176,10 @@ export class UserStore {
     return user;
   }
   async login(login, password) {
-    const user =
-      typeof login === "string"
-        ? this.users.find((user) => user.username === login.toLowerCase())
-        : null;
+    let normalized;
+    try { normalized = username(login); }
+    catch { return null; }
+    const user = this.users.find((user) => user.username === normalized);
     const hash = user?.passwordHash || this.dummyHash;
     const correct = await checkPassword(password, hash);
     if (
@@ -209,9 +209,10 @@ export class UserStore {
   }
   session(value) {
     if (typeof value !== "string" || !/^[a-f0-9]{48}$/.test(value)) return null;
+    const hash = digest(value);
     const session = this.sessions.find(
       (session) =>
-        session.hash === digest(value) && session.expiresAt > Date.now(),
+        session.hash === hash && session.expiresAt > Date.now(),
     );
     return (
       (session &&
@@ -223,8 +224,9 @@ export class UserStore {
   }
   logout(value) {
     if (typeof value !== "string") return;
+    const hash = digest(value);
     this.sessions = this.sessions.filter(
-      (session) => session.hash !== digest(value),
+      (session) => session.hash !== hash,
     );
     this.save();
   }

@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import {deflateSync} from 'node:zlib';
 import {spawn,execFileSync} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdtemp,mkdir,readFile,writeFile,rm,readdir} from 'node:fs/promises';
@@ -61,6 +62,26 @@ with zipfile.ZipFile(sys.argv[1]) as z:
   p=pathlib.Path(d)/'song.flac';p.write_bytes(z.read('Песня.flac'));assert mutagen.File(p)['LYRICS']==['Текст']`,archive]);
     const bad=await(await upload(Buffer.from('not audio'))).json();await until(async()=>(await jobs()).find(j=>j.id===bad.id)?.status==='failed');
     assert.ok(!(await readdir(downloads)).includes(bad.id),'invalid source removed');
+    // A small compressed ID3 frame must fail without publishing or retaining audio.
+    const mp3=join(base,'metadata-limit.mp3');
+    execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','sine=duration=1',mp3]);
+    let mp3Bytes=await readFile(mp3);
+    if(mp3Bytes.subarray(0,3).toString()==='ID3'){
+      const n=mp3Bytes.subarray(6,10).reduce((size,byte)=>(size<<7)|byte,0);mp3Bytes=mp3Bytes.subarray(10+n);
+    }
+    const content=Buffer.concat([Buffer.from('fixture-owner\0'),Buffer.alloc(9*1024*1024,65)]);
+    const expanded=Buffer.alloc(4);expanded.writeUInt32BE(content.length);
+    const compressed=Buffer.concat([expanded,deflateSync(content)]);
+    const frame=Buffer.alloc(10);frame.write('PRIV');frame.writeUInt32BE(compressed.length,4);frame.writeUInt16BE(0x80,8);
+    const size=frame.length+compressed.length;
+    const header=Buffer.from([73,68,51,3,0,0,(size>>21)&127,(size>>14)&127,(size>>7)&127,size&127]);
+    const bomb=Buffer.concat([header,frame,compressed,mp3Bytes]);assert.ok(bomb.length<100000);
+    const rejected=await(await upload(bomb,{'x-file-name':'metadata-limit.mp3'})).json();
+    await until(async()=>(await jobs()).find(j=>j.id===rejected.id)?.status==='failed');
+    assert.match((await jobs()).find(j=>j.id===rejected.id).error,/Метаданные/);
+    assert.equal((await api(`/api/jobs/${rejected.id}/archive`,cookie)).status,404);
+    assert.ok(!(await readdir(downloads)).includes(rejected.id));
+
     // A permission revoked mid-upload must not enqueue a worker or retain audio.
     const slow=stream({cookie:aliceCookie});slow.request.write(audio.subarray(0,50));await new Promise(r=>setTimeout(r,150));
     const receivingJob=JSON.parse(await readFile(join(data,'jobs.json'),'utf8')).find(j=>j.status==='uploading');

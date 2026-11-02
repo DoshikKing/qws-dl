@@ -88,3 +88,58 @@ def install_download_safety(directory):
     utils.fix_byte_limit = path
     utils.create_temp_filename = temporary
     utils.download_file = download
+
+
+class MetadataLimitError(ValueError):
+    """Untrusted audio metadata exceeds its decoded budget."""
+
+
+def install_tag_safety(path):
+    """Bound ID3 input and decoded frames before Mutagen parses uploaded audio."""
+    import zlib
+    from types import SimpleNamespace
+    from mutagen.id3 import _frames
+
+    maximum = 16 * 1024**2
+    with Path(path).open('rb') as source:
+        header = source.read(10)
+    if header.startswith(b'ID3'):
+        if len(header) != 10 or any(value & 0x80 for value in header[6:10]):
+            raise ValueError('Invalid ID3 size')
+        size = 0
+        for value in header[6:10]:
+            size = (size << 7) | value
+        if size > maximum:
+            raise MetadataLimitError('ID3 tag exceeds 16 MiB')
+
+    remaining = maximum
+
+    def decompress(data):
+        nonlocal remaining
+        limit = min(8 * 1024**2, remaining)
+        decoder = zlib.decompressobj()
+        result = decoder.decompress(data, limit + 1)
+        if len(result) > limit:
+            raise MetadataLimitError('Decoded ID3 metadata exceeds its budget')
+        if not decoder.eof:
+            raise zlib.error('Incomplete ID3 compressed frame')
+        remaining -= len(result)
+        return result
+
+    # Mutagen is pinned. Scope the adapter to ID3; leave the global zlib module alone.
+    _frames.zlib = SimpleNamespace(decompress=decompress, error=zlib.error)
+
+
+def read_audio_tags(path):
+    import mutagen
+    install_tag_safety(path)
+    return mutagen.File(path)
+
+
+def limit_upload_resources():
+    """Fail closed if OS limits cannot be installed; invoked only in the upload CLI."""
+    import resource
+    for kind, maximum in ((resource.RLIMIT_AS, 512 * 1024**2), (resource.RLIMIT_CPU, 30)):
+        soft, hard = resource.getrlimit(kind)
+        bound = min([maximum] + [value for value in (soft, hard) if value != resource.RLIM_INFINITY])
+        resource.setrlimit(kind, (bound, bound))

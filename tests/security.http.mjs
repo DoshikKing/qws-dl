@@ -10,7 +10,7 @@ import {createServer} from 'node:net';
 
 test('HTTP security: bounded bodies, independent limits, revocation while reading, and per-user queue quotas', async () => {
   const packages = await readdir('.output/server/node_modules', {recursive: true});
-  assert.ok(!packages.some(name => /(^|\/)(node-forge|listhen)(\/|$)/.test(name)));
+  assert.ok(!packages.some(name => /(^|\/)(node-forge|listhen|glob|minimatch|deepmerge)(\/|$)/.test(name)));
   const base=await mkdtemp(join(tmpdir(),'qws-security-'));
   const listener=createServer();listener.listen(0,'127.0.0.1');await once(listener,'listening');const port=listener.address().port;await new Promise(r=>listener.close(r));
   const origin='http://127.0.0.1:'+port;
@@ -37,6 +37,8 @@ test('HTTP security: bounded bodies, independent limits, revocation while readin
     const large=streaming('/api/login');large.request.end('x'.repeat(65537));assert.equal(await large.result,413);
     for(let i=0;i<30;i++)assert.equal((await api('/api/invitations/check',{code:'invalid'})).status,400);
     assert.equal((await api('/api/invitations/check',{code:'invalid'})).status,429);
+    const invalidName=await api('/api/login',{username:'İ'.repeat(20000),password:'fixture-password'});
+    assert.equal(invalidName.status,401);assert.equal((await invalidName.json()).statusMessage,'Неверный логин или пароль.');
     const login=await api('/api/login',{username:'admin',password:'fixture-admin-password'});assert.equal(login.status,200);
     const adminCookie=login.headers.get('set-cookie').split(';')[0];
     const profile=await(await fetch(origin+'/api/account',{headers:{cookie:adminCookie}})).json();

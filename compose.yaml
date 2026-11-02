@@ -13,6 +13,7 @@ services:
     volumes:
       - app-data:/data
       - downloads:/downloads
+    mem_limit: ${WEB_MEMORY_LIMIT:-2g}
     stop_grace_period: 15s
     security_opt:
       - no-new-privileges:true

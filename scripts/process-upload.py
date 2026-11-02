@@ -13,7 +13,7 @@ from mutagen.oggopus import OggOpus
 from mutagen.oggvorbis import OggVorbis
 
 from lyrics import lookup, metadata, tag_audio
-from worker_safety import install_network_safety
+from worker_safety import install_network_safety, read_audio_tags, limit_upload_resources, MetadataLimitError
 
 
 def process_upload(directory, filename, cache_path, overrides):
@@ -22,7 +22,7 @@ def process_upload(directory, filename, cache_path, overrides):
     if path.is_symlink() or path.parent != root or not path.is_file():
         return 6
     try:
-        audio = mutagen.File(path)
+        audio = read_audio_tags(path)
         if not isinstance(audio, (FLAC, MP3, MP4, OggVorbis, OggOpus)):
             return 6
         # A renamed executable or a different container is not accepted as audio.
@@ -38,6 +38,8 @@ def process_upload(directory, filename, cache_path, overrides):
         duration = audio.info.length
         if not math.isfinite(duration) or duration <= 0:
             return 6
+    except MetadataLimitError:
+        return 8
     except (mutagen.MutagenError, ValueError, TypeError, KeyError, OSError):
         return 6
     try:
@@ -56,9 +58,13 @@ def process_upload(directory, filename, cache_path, overrides):
 
 if __name__ == '__main__':
     os.umask(0o077)
-    install_network_safety()
     try:
+        limit_upload_resources()
+        install_network_safety()
         raise SystemExit(process_upload(*sys.argv[1:4], json.loads(sys.argv[4])))
+    except MemoryError:
+        print('Превышен лимит памяти обработки файла.', file=sys.stderr)
+        raise SystemExit(8)
     except Exception:
         print('Не удалось обработать аудиофайл.', file=sys.stderr)
         raise SystemExit(1)
