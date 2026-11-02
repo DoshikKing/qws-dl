@@ -168,6 +168,25 @@ else:
       await mkdir(join(base, 'data'), { recursive: true });
       await writeFile(join(base, 'data/qobuz-session.json'), JSON.stringify({ userId: '12345', authToken: 'test-session-secret', updatedAt: new Date().toISOString() }));
       await start();
+      // Browser hardening must cover successful HTML/assets as well as errors.
+      const framing = response => {
+        assert.equal(response.headers.get('x-frame-options'), 'DENY');
+        assert.match(response.headers.get('content-security-policy') || '', /frame-ancestors 'none'/);
+      };
+      const page = await fetch(origin + '/');
+      assert.equal(page.status, 200);framing(page);
+      assert.equal(page.headers.get('strict-transport-security'), null, 'plain HTTP must not emit HSTS');
+      const html = await page.text();
+      const assetPath = html.match(/<script[^>]+src="([^"]+)"/)[1];
+      const hostOrigin = new URL(origin).origin;
+      for (const path of [origin + '/', hostOrigin + assetPath, origin + '/api/health', origin + '/api/account', origin + '/_nuxt/missing-audit-file.js']) {
+        const response = await fetch(path, { headers: { 'x-forwarded-proto': 'https' } });
+        framing(response);
+        assert.equal(response.headers.get('strict-transport-security'), 'max-age=31536000');
+        await response.arrayBuffer();
+      }
+      const head = await fetch(origin + '/', { method: 'HEAD', headers: { 'x-forwarded-proto': 'https' } });
+      framing(head);assert.equal(head.headers.get('strict-transport-security'), 'max-age=31536000');
       assert.equal((await api('/api/admin/qobuz/login', 'POST')).status, 401);
       assert.equal(
         (await api("/api/search", "POST", { query: "Песня" })).status,

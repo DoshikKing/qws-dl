@@ -61,3 +61,19 @@ The pinned OrpheusDL and Qobuz module are adapted at worker startup by
 CLI for `scripts/run-orpheus.py`: direct invocation omits application TLS, path,
 budget and pagination boundaries. The unused `protobuf==3.15.8` was removed from
 `requirements-orpheus.lock`; older local virtual environments should uninstall it.
+
+## Browser response protection
+
+A Nitro request hook sets `Content-Security-Policy: frame-ancestors 'none'` and
+`X-Frame-Options: DENY` on the application's responses, including successful HTML,
+static assets and API/error responses. Embedding the application in an iframe is
+disabled. The policy leaves Nuxt scripts, styles, images and Qobuz navigation working.
+
+HTTPS responses also receive `Strict-Transport-Security: max-age=31536000`. HSTS
+applies to the current hostname across paths, including applications outside `/dl/`.
+Subdomains and preload are not opted in. Plain HTTP responses do not emit HSTS.
+The app follows H3's HTTPS detection, including `X-Forwarded-Proto: https` from
+the reverse proxy; overwrite this header at the proxy and keep the backend private,
+as shown in `deploy/nginx-dl.conf`. Preserve these response headers through the proxy.
+TLS termination, HTTP-to-HTTPS redirects and proxy-generated errors remain the
+reverse proxy's responsibility. Rebuild/recreate the app to deploy the hook.

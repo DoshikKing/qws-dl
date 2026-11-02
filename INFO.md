@@ -351,3 +351,16 @@ The guard also applies to optional LRCLIB tag reads on Qobuz downloads; enrichme
 errors preserve the downloaded audio. Compose adds an overall 2 GiB service cap
 (`WEB_MEMORY_LIMIT`); restart/recreate the container after changing this setting.
 See SECURITY.md for the remaining build-time dependency advisories.
+
+### Browser security headers
+
+The application denies iframe embedding with CSP `frame-ancestors 'none'` and
+`X-Frame-Options: DENY`. HTTPS responses advertise one year of HSTS for the current
+hostname (across all paths). Keep HTTPS working for every application on that host.
+The supplied nginx snippet overwrites `X-Forwarded-Proto` with `$scheme`, allowing
+the app behind TLS termination to identify HTTPS. Keep the backend port private
+and preserve the application's security headers. Configure HTTP-to-HTTPS redirects
+at the TLS proxy; the app's HSTS header does not create that redirect. After
+rebuilding/recreating, check the main HTML response as well as API errors, e.g.
+`curl -I https://your-host/dl/`. Proxy-generated responses need proxy-level headers
+if you want the same protection there.
