@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { resolve, join } from "node:path";
 import { prepareArchive } from "./archive.mjs";
-import { qobuzEnvironment, readQobuzSession, retiredQobuzVariables } from "./qobuz-session.mjs";
+import { qobuzEnvironment, workerEnvironment, readQobuzSession, retiredQobuzVariables } from "./qobuz-session.mjs";
 import { takeLimit } from "./rate-limit.mjs";
 import { folderBytes, requireSpace } from "./storage.mjs";
 
@@ -137,11 +137,13 @@ export class DownloadQueue {
       ? JSON.parse(readFileSync(this.file, "utf8"))
       : [];
     for (const job of this.jobs) {
-      if (job.status === "running") {
+      if (["running", "uploading"].includes(job.status)) {
         job.status = "failed";
         job.error =
+          job.kind === "lyrics-upload" ? "Сервер перезапущен. Загрузите файл снова." :
           "Сервер перезапущен во время загрузки. Добавьте ссылку повторно.";
         job.finishedAt = new Date().toISOString();
+        if (job.kind === "lyrics-upload") rmSync(this.folder(job), { recursive: true, force: true });
       }
       job.title ||= this.readTitle(job);
       try { job.sizeBytes = folderBytes(this.folder(job)); }
@@ -150,7 +152,7 @@ export class DownloadQueue {
         24,
         Math.max(1, Number(job.retentionHours) || 24),
       );
-      if (!["running", "queued"].includes(job.status)) {
+      if (!["running", "queued", "uploading"].includes(job.status)) {
         job.expiresAt ||= new Date(
           Date.parse(
             job.finishedAt || job.createdAt || new Date().toISOString(),
@@ -205,6 +207,17 @@ export class DownloadQueue {
     if (typeof lyrics !== "boolean") throw new Error("Параметр текстов должен быть логическим значением.");
     url = normalizeUrl(url);
     if (!qualities.includes(quality)) throw new Error("Неизвестное качество.");
+    return this.enqueue({ url, quality, retentionHours, userId, lyrics });
+  }
+
+  addUpload(filename, retentionHours, userId, metadata = {}) {
+    if (!Number.isInteger(retentionHours) || retentionHours < 1 || retentionHours > 5)
+      throw new Error("Срок хранения: целое число от 1 до 5 часов.");
+    return this.enqueue({ url: "", quality: "", retentionHours, userId, lyrics: true,
+      kind: "lyrics-upload", filename, title: filename, metadata, status: "uploading" });
+  }
+
+  enqueue({ url, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, status = "queued" }) {
     if (
       !Number.isInteger(retentionHours) ||
       retentionHours < 1 ||
@@ -212,7 +225,7 @@ export class DownloadQueue {
     )
       throw new Error("Срок хранения: целое число от 1 до 24 часов.");
     const own = this.jobs.filter((job) => job.userId === userId && !this.expired(job));
-    const pending = (job) => ["queued", "running", "archiving"].includes(job.status);
+    const pending = (job) => ["queued", "uploading", "running", "archiving"].includes(job.status);
     if (userId && (own.filter(pending).length >= (this.settings.maxUserJobs ?? 10) || own.length >= 200))
       throw Object.assign(new Error("Лимит заданий аккаунта исчерпан. Дождитесь завершения или удаления архивов."), { statusCode: 429 });
     if (this.jobs.filter((job) => !this.expired(job)).length >= 2000)
@@ -224,7 +237,7 @@ export class DownloadQueue {
       throw Object.assign(new Error("Слишком много новых заданий. Подождите минуту."), { statusCode: 429 });
     if (
       this.jobs.filter((job) =>
-        ["queued", "running", "archiving"].includes(job.status),
+        ["queued", "uploading", "running", "archiving"].includes(job.status),
       ).length >= 50
     )
       throw new Error("Очередь заполнена (50 заданий).");
@@ -234,7 +247,8 @@ export class DownloadQueue {
       url,
       quality,
       lyrics,
-      status: "queued",
+      kind, filename, title, metadata,
+      status,
       createdAt: new Date().toISOString(),
       log: "",
       error: null,
@@ -251,17 +265,39 @@ export class DownloadQueue {
     return job;
   }
 
+  finishUpload(job) {
+    if (job.status !== "uploading") throw new Error("Загрузка файла отменена.");
+    job.status = "queued";
+    this.save();
+    this.pump();
+  }
+
+  discardUpload(job, message = "Загрузка файла прервана.") {
+    rmSync(this.folder(job), { recursive: true, force: true });
+    job.sizeBytes = 0;
+    job.status = "failed";
+    job.error = message;
+    job.finishedAt = new Date().toISOString();
+    job.expiresAt = job.finishedAt;
+    this.save();
+    this.scheduleCleanup();
+  }
+
   cancel(id) {
     const job = this.jobs.find((item) => item.id === id);
     if (!job) return false;
-    if (!["queued", "running"].includes(job.status)) return true;
+    if (!["queued", "uploading", "running"].includes(job.status)) return true;
     job.status = "cancelled";
     job.finishedAt = new Date().toISOString();
     job.expiresAt = new Date(
       Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
     ).toISOString();
-    this.save();
     if (this.active?.job.id === id) this.kill();
+    else if (job.kind === "lyrics-upload") {
+      rmSync(this.folder(job), { recursive: true, force: true });
+      job.sizeBytes = 0;
+    }
+    this.save();
     this.scheduleCleanup();
     return true;
   }
@@ -295,7 +331,8 @@ export class DownloadQueue {
       this.finishArchive(job);
       return;
     }
-    const ready = readiness(this.settings);
+    const upload = job.kind === "lyrics-upload";
+    const ready = upload ? { ready: existsSync(this.settings.python), installed: false } : readiness(this.settings);
     let storageError;
     try {
       requireSpace(this.settings);
@@ -305,13 +342,17 @@ export class DownloadQueue {
     } catch (error) { storageError = error.message; }
     if (!ready.ready || storageError) {
       job.status = "failed";
-      job.error = storageError || (!ready.installed
+      job.error = storageError || (upload ? "Установите Python-зависимости: npm run setup:orpheus" : !ready.installed
         ? "Установите OrpheusDL: npm run setup:orpheus"
         : "Войдите в Qobuz через Настройки → Qobuz.");
       job.finishedAt = new Date().toISOString();
       job.expiresAt = new Date(
         Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
       ).toISOString();
+      if (upload) {
+        rmSync(this.folder(job), { recursive: true, force: true });
+        job.sizeBytes = 0;
+      }
       this.save();
       this.scheduleCleanup();
       queueMicrotask(() => this.pump());
@@ -322,16 +363,19 @@ export class DownloadQueue {
     job.status = "running";
     job.startedAt = new Date().toISOString();
     this.save();
-    const environment = qobuzEnvironment(this.settings.data);
+    const environment = upload ? workerEnvironment() : qobuzEnvironment(this.settings.data);
     const otherBytes = this.jobs.filter((other) => other.userId === job.userId && other.id !== job.id && !this.expired(other))
       .reduce((bytes, other) => bytes + (other.sizeBytes || 0), 0);
     const byteLimit = Math.min(this.settings.maxJobBytes ?? 10 * 1024 ** 3,
       (this.settings.maxUserBytes ?? 20 * 1024 ** 3) - otherBytes);
     const child = spawn(
       this.settings.python,
-      ["-u", this.settings.runner, this.settings.root, job.url, job.quality],
+      upload
+        ? ["-u", resolve("scripts/process-upload.py"), folder, job.filename,
+          join(this.settings.data, "lyrics.sqlite3"), JSON.stringify(job.metadata || {})]
+        : ["-u", this.settings.runner, this.settings.root, job.url, job.quality],
       {
-        cwd: this.settings.root,
+        cwd: upload ? process.cwd() : this.settings.root,
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...environment, DOWNLOAD_DIR: folder, PYTHONUNBUFFERED: "1",
@@ -371,7 +415,7 @@ export class DownloadQueue {
     const timer = setTimeout(() => {
       job.error = "Превышено время загрузки.";
       this.kill();
-    }, this.settings.timeout * 1000);
+    }, (upload ? 90 : this.settings.timeout) * 1000);
     const checkStorage = () => {
       requireSpace(this.settings);
       if (folderBytes(folder) > byteLimit) throw new Error("Лимит размера загрузки исчерпан.");
@@ -402,9 +446,15 @@ export class DownloadQueue {
               .findLast((line) => line.startsWith("Qobuz: ")) ||
             "Не удалось войти в Qobuz. Подробности в журнале.";
         if (job.status === "failed" && !job.error)
-          job.error =
+          job.error = upload ? ({
+            4: "Текст для этой версии записи не найден.",
+            5: "Нет исполнителя или названия в тегах. Укажите их в форме и загрузите файл снова.",
+            6: "Файл повреждён или формат аудио не поддерживается.",
+            7: "Не удалось получить текст. Проверьте доступ сервера к LRCLIB и повторите позже.",
+          }[code] || "Не удалось обработать аудиофайл.") :
             "OrpheusDL сообщил об ошибке. Подробности в журнале; часть файлов могла сохраниться.";
       }
+      if (upload && job.status !== "completed") rmSync(folder, { recursive: true, force: true });
       job.finishedAt = new Date().toISOString();
       job.expiresAt = new Date(
         Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
@@ -446,7 +496,7 @@ export class DownloadQueue {
   retryArchive(job) {
     if (this.expired(job) || job.deletedAt) throw new Error("expired");
     if (
-      ["running", "queued", "archiving"].includes(job.status) ||
+      ["running", "queued", "uploading", "archiving"].includes(job.status) ||
       this.active?.job.id === job.id
     )
       throw new Error("busy");
@@ -463,7 +513,7 @@ export class DownloadQueue {
 
   deleteFiles(job) {
     if (
-      ["running", "queued", "archiving"].includes(job.status) ||
+      ["running", "queued", "uploading", "archiving"].includes(job.status) ||
       this.active?.job.id === job.id
     )
       throw new Error("busy");
@@ -579,7 +629,7 @@ export class DownloadQueue {
     this.jobs = this.jobs.filter(
       (job, index) =>
         index < 200 ||
-        ["running", "queued", "archiving"].includes(job.status) ||
+        ["running", "queued", "uploading", "archiving"].includes(job.status) ||
         (!job.expiredAt && !job.deletedAt && this.hasFolder(job)),
     );
   }
@@ -591,7 +641,7 @@ export class DownloadQueue {
         job.expiredAt ||
         job.deletedAt ||
         !this.expired(job, now) ||
-        ["running", "queued", "archiving"].includes(job.status)
+        ["running", "queued", "uploading", "archiving"].includes(job.status)
       )
         continue;
       try {
@@ -621,7 +671,7 @@ export class DownloadQueue {
           job.expiresAt &&
           !job.expiredAt &&
           !job.deletedAt &&
-          !["running", "queued", "archiving"].includes(job.status),
+          !["running", "queued", "uploading", "archiving"].includes(job.status),
       )
       .map((job) =>
         job.cleanupError ? Date.now() + 60_000 : Date.parse(job.expiresAt),

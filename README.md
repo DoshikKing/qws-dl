@@ -88,3 +88,16 @@ Albums show their release year and track count when supplied by Qobuz. Artists
 show their photograph and album count when available. Selecting an artist queues
 their entire available discography in one job, as stated in the interface.
 Quality, retention and the optional LRCLIB lyrics setting apply to every type.
+
+## Lyrics for uploaded audio
+
+The **Тексты** section accepts one FLAC, MP3, M4A, Ogg or Opus file up to 100 MiB,
+without a Qobuz session. Tags supply artist, title and album; optional form fields
+override the lookup metadata. A matching LRCLIB result is embedded, and the ZIP
+contains the audio plus an identically named UTF-8 `.lrc`. Plain lyrics have no
+invented timestamps and are identified as unsynchronized. Missing matches or invalid
+audio produce an explicit error. Choose **1–5 hours** of storage after completion.
+Raw server copies are removed after ZIP verification, on failed/interrupted
+processing or after a restart during processing. Your local original is unchanged.
+Only lookup metadata, never uploaded audio, is sent to `lrclib.net`. Allow outbound
+HTTPS to that host. The existing archive authorization and account quotas apply.

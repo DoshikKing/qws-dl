@@ -325,3 +325,18 @@ session/configuration or download audio. A successful check validates the curren
 session and signing; it does not establish how long Qobuz will continue accepting it.
 Exit status is 0 on success, 1 on failure. You can share the JSON for troubleshooting.
 Legacy password-comparison options were removed along with the old authentication modes.
+
+### Uploaded lyrics files
+
+`POST /api/lyrics` is an authenticated raw-binary upload endpoint with a streamed
+100 MiB cap (also enforced for chunked bodies), a 120-second receive deadline,
+one active receive per user and two globally. If using a reverse proxy, permit
+100 MiB request bodies and the upload timeout for this endpoint; JSON endpoints
+retain their independent 64 KiB cap. The route validates the basename, extension,
+metadata and 1–5 hour retention before receiving data, rechecks the session while
+receiving and on completion, and reserves a normal account job/quota slot.
+The worker checks the actual container with Mutagen and has a 90-second timeout.
+Uploads use `PYTHON_BIN` and the existing Python dependencies; no Qobuz login is
+required. Completed ZIPs use the same download authorization, restart recovery and
+automatic expiry as regular jobs. Only the shared public-lyrics cache may outlive
+the selected retention; uploaded audio and archives are never stored in that cache.

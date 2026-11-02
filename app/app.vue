@@ -1,6 +1,7 @@
 <script setup lang="ts">
 type Job = {
   id: string;
+  kind?: string;
   url: string;
   title?: string | null;
   quality: string;
@@ -41,6 +42,7 @@ const account = ref<Account | null>(null);
 const views = computed(() => [
   { id: "queue", label: "Загрузки", icon: "queue" },
   { id: "library", label: "Архивы", icon: "archive" },
+  { id: "lyrics", label: "Тексты", icon: "music" },
   { id: "settings", label: "Настройки", icon: "settings" },
   ...(account.value?.role === "admin"
     ? [
@@ -68,7 +70,7 @@ const jobs = ref<Job[]>([]);
 const selectedJob = ref<string | null>(null);
 const activeJobs = computed(() =>
   jobs.value.filter((job) =>
-    ["queued", "running", "archiving"].includes(job.status),
+    ["queued", "uploading", "running", "archiving"].includes(job.status),
   ),
 );
 const availableArchives = computed(() =>
@@ -90,11 +92,12 @@ const mediaTypes: Record<string, string> = {
   interpreter: "Исполнитель",
 };
 const mediaType = (job: Job) =>
-  mediaTypes[job.url.split("/")[3] || ""] || "Qobuz";
+  job.kind === "lyrics-upload" ? "Свой файл" : mediaTypes[job.url.split("/")[3] || ""] || "Qobuz";
 const jobTitle = (job: Job) =>
   job.title || `${mediaType(job)} · ${job.url.split("/").pop()}`;
 const archiveUrl = (job: Job) => `${baseURL}api/jobs/${job.id}/archive`;
 const labels: Record<string, string> = {
+  uploading: "Файл загружается",
   queued: "В очереди",
   running: "Загружается",
   archiving: "Создаётся ZIP",
@@ -323,7 +326,7 @@ onBeforeUnmount(() => clearInterval(timer));
               </button></div
           ></Transition>
           <div
-            v-if="status && !status.ready && tab !== 'settings'"
+            v-if="status && !status.ready && tab !== 'settings' && tab !== 'lyrics'"
             class="notice notice-warning"
             role="status"
           >
@@ -499,7 +502,9 @@ onBeforeUnmount(() => clearInterval(timer));
                             />
                           </div>
                           <div class="item-description">
+                            <strong v-if="job.kind === 'lyrics-upload'" class="item-title">{{ jobTitle(job) }}</strong>
                             <a
+                              v-else
                               class="item-title"
                               :href="job.url"
                               target="_blank"
@@ -509,7 +514,7 @@ onBeforeUnmount(() => clearInterval(timer));
                             <p class="item-meta">
                               {{ mediaType(job) }}<span>·</span
                               >{{
-                                qualities[job.quality]?.split(" · ")[0] ||
+                                job.kind === 'lyrics-upload' ? 'Текст' : qualities[job.quality]?.split(" · ")[0] ||
                                 job.quality
                               }}<span>·</span>{{ date(job.createdAt) }}
                             </p>
@@ -608,6 +613,11 @@ onBeforeUnmount(() => clearInterval(timer));
                   </section>
                 </template>
 
+                <LyricsUpload
+                  v-else-if="tab === 'lyrics'"
+                  :jobs="jobs.filter(job => job.kind === 'lyrics-upload')"
+                  @changed="refresh"
+                />
                 <ArchiveLibrary
                   v-else-if="tab === 'library'"
                   @changed="refresh"

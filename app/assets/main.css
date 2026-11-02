@@ -1867,3 +1867,35 @@ a.item-title:hover {
     outline: 1px solid Highlight;
   }
 }
+
+.lyrics-upload-form {
+  display: grid;
+  gap: 18px;
+  margin-top: 24px;
+}
+.lyrics-upload-form input[type="file"] {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.lyrics-result {
+  padding: 20px;
+  margin-bottom: 12px;
+}
+.lyrics-result .primary-button {
+  margin-top: 16px;
+}
+
+.lyrics-upload-metadata summary {
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+  font-weight: 500;
+}
+.lyrics-upload-metadata .field {
+  margin-top: 16px;
+}
+.lyrics-upload-metadata summary:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}

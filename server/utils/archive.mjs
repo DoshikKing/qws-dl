@@ -9,7 +9,7 @@ const pending = new Map();
 export async function jobArchive(queue, job) {
   if (queue.expired(job) || job.deletedAt) throw new Error("expired");
   if (
-    ["queued", "running", "archiving"].includes(job.status) ||
+    ["queued", "uploading", "running", "archiving"].includes(job.status) ||
     queue.active?.job.id === job.id
   )
     throw new Error("running");
@@ -67,7 +67,7 @@ export function closeArchives() {
 }
 
 export function archiveFilename(job) {
-  const fallback =
+  const fallback = job.kind === "lyrics-upload" ? `lyrics-${job.id}` :
     "qobuz-" + new URL(job.url).pathname.slice(1).replaceAll("/", "-");
   let name = (job.title || fallback)
     .replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g, " ")
