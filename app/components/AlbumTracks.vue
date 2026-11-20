@@ -84,7 +84,9 @@ watch(() => props.status, load);
           <div class="track-description">
             <strong>{{ track.title }}</strong>
             <span v-if="track.artist">{{ track.artist }}</span>
-            <span class="track-state">{{ labels[track.status] || track.status }}<template v-if="track.retry"> · Повтор: {{ labels[track.retry.status] || track.retry.status }}</template></span>
+            <span class="track-state">
+              <span :data-status="track.status">{{ labels[track.status] || track.status }}</span><template v-if="track.retry"> · <span :data-status="track.retry.status">Повтор: {{ labels[track.retry.status] || track.retry.status }}</span></template>
+            </span>
           </div>
           <button type="button" class="quiet-button" :disabled="!ready || !!retrying || active(track.status) || !!(track.retry && active(track.retry.status))"
             :aria-label="`Скачать повторно: ${track.title}`" @click="retry(track)">
@@ -106,6 +108,9 @@ summary { min-height: 44px; display: list-item; align-content: center; cursor: p
 .track-description { min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
 .track-description strong { font-size: 13px; }
 .track-description span { font-size: 12px; color: var(--secondary); }
+.track-state [data-status="failed"],
+.track-state [data-status="not_downloaded"] { color: var(--danger); }
+.track-state [data-status="completed"] { color: var(--success); }
 @media (max-width: 480px) {
   .album-track { grid-template-columns: 20px minmax(0, 1fr); gap: 6px; }
   .album-track .quiet-button { grid-column: 2; justify-self: start; }
