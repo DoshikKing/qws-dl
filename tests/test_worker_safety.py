@@ -45,11 +45,14 @@ class WorkerSafetyTest(unittest.TestCase):
                 utils.download_file('http://example.test/audio', root / 'unsafe.flac')
             response = MagicMock()
             response.__enter__.return_value = response
+            response.status_code = 200
+            response.headers = {}
             response.iter_content.return_value = [b'ab', b'cde']
             with patch.object(utils.r_session, 'get', return_value=response):
                 with self.assertRaisesRegex(QobuzWebError, 'Лимит'):
                     utils.download_file('https://example.test/audio', root / 'song.flac')
-                self.assertEqual((root / 'song.flac').read_bytes(), b'ab')
+                self.assertFalse((root / 'song.flac').exists())
+                self.assertEqual(list((root / '.qws-work').iterdir()), [])
                 response.raise_for_status.side_effect = requests.HTTPError('fixture HTTP failure')
                 with self.assertRaises(requests.HTTPError):
                     utils.download_file('https://example.test/audio', root / 'failed.flac')

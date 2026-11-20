@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import time
 from urllib.parse import urlsplit
 
 import requests
@@ -62,18 +63,97 @@ def install_download_safety(directory):
             raise QobuzWebError('Недопустимый путь файла загрузки.')
         if target.is_file():
             return
-        with utils.r_session.get(url, stream=True, headers=headers or {}, timeout=30) as response:
-            response.raise_for_status()
-            if int(response.headers.get('content-length', 0)) > maximum - downloaded:
-                raise QobuzWebError('Лимит размера загрузки исчерпан.')
-            with target.open('xb') as output:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):
-                    if not chunk:
-                        continue
-                    if downloaded + len(chunk) > maximum or shutil.disk_usage(root).free < reserve + len(chunk):
-                        raise QobuzWebError('Лимит загрузки или свободного места исчерпан.')
-                    output.write(chunk)
-                    downloaded += len(chunk)
+        # Keep incomplete files out of media discovery and ZIPs, even after SIGKILL.
+        partial = Path(temporary())
+        offset, total, validator, failures = 0, None, None, 0
+        ranged = True
+        base_headers = requests.structures.CaseInsensitiveDict(headers or {})
+        for key in ('Range', 'If-Range', 'Accept-Encoding'):
+            base_headers.pop(key, None)
+        base_headers['Accept-Encoding'] = 'identity'
+        try:
+            with partial.open('xb') as output:
+                while True:
+                    request_headers = base_headers.copy()
+                    if ranged:
+                        request_headers['Range'] = f'bytes={offset}-{offset + 8 * 1024**2 - 1}'
+                        if offset:
+                            request_headers['If-Range'] = validator
+                    try:
+                        with utils.r_session.get(url, stream=True, headers=request_headers, timeout=30) as response:
+                            response.raise_for_status()
+                            if response.headers.get('Content-Encoding', 'identity').lower() != 'identity':
+                                raise QobuzWebError('Сервер вернул сжатый ответ вместо исходного файла.')
+                            length = response.headers.get('Content-Length')
+                            length = int(length) if length is not None else None
+                            etag = response.headers.get('ETag', '')
+                            current_validator = (etag if etag and not etag.startswith('W/')
+                                                 else response.headers.get('Last-Modified'))
+                            if response.status_code == 206:
+                                match = re.fullmatch(r'bytes (\d+)-(\d+)/(\d+)', response.headers.get('Content-Range', ''))
+                                if not ranged or not match:
+                                    raise QobuzWebError('Некорректный диапазон ответа сервера.')
+                                start, end, size = map(int, match.groups())
+                                if (start != offset or not start <= end < size or
+                                        end >= offset + 8 * 1024**2 or
+                                        (length is not None and length != end - start + 1) or
+                                        (total is not None and size != total) or
+                                        (offset and current_validator != validator)):
+                                    raise QobuzWebError('Диапазон или версия файла изменились при докачке.')
+                                length, total = end - start + 1, size
+                                validator = current_validator
+                                if not validator:
+                                    # Without a version validator, never join separate responses.
+                                    ranged = False
+                                    downloaded -= offset
+                                    offset, total = 0, None
+                                    output.seek(0)
+                                    output.truncate()
+                                    continue
+                            elif response.status_code == 200:
+                                # Range ignored, or If-Range detected a changed resource.
+                                downloaded -= offset
+                                offset, total, validator, ranged = 0, length, current_validator, False
+                                output.seek(0)
+                                output.truncate()
+                            else:
+                                raise QobuzWebError('Неожиданный HTTP-ответ при загрузке файла.')
+                            if total is not None and total > maximum - downloaded + offset:
+                                raise QobuzWebError('Лимит размера загрузки исчерпан.')
+                            received = 0
+                            for chunk in response.iter_content(chunk_size=64 * 1024):
+                                if not chunk:
+                                    continue
+                                if length is not None and received + len(chunk) > length:
+                                    raise QobuzWebError('Ответ сервера превышает заявленный размер.')
+                                if downloaded + len(chunk) > maximum or shutil.disk_usage(root).free < reserve + len(chunk):
+                                    raise QobuzWebError('Лимит загрузки или свободного места исчерпан.')
+                                output.write(chunk)
+                                downloaded += len(chunk)
+                                offset += len(chunk)
+                                received += len(chunk)
+                            if length is not None and received != length:
+                                raise requests.exceptions.ChunkedEncodingError('Неполный ответ сервера.')
+                            if not ranged or offset == total:
+                                break
+                    except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError):
+                        if failures >= 4:
+                            raise QobuzWebError('Соединение прервано; попытки докачки исчерпаны.') from None
+                        failures += 1
+                        # Resume full responses too, but only with a known size and version.
+                        ranged = bool(offset and validator and total is not None and offset < total)
+                        if not ranged:
+                            downloaded -= offset
+                            offset, total, validator = 0, None, None
+                            output.seek(0)
+                            output.truncate()
+                        print(f'Соединение прервано. Повтор {failures}/4 с позиции {offset} байт.', flush=True)
+                        time.sleep(min(2 ** (failures - 1), 8))
+            partial.replace(target)
+        finally:
+            if partial.exists():
+                partial.unlink()
+                downloaded -= offset
         if artwork_settings and artwork_settings.get('should_resize', False):
             from PIL import Image
             resolution = artwork_settings.get('resolution', 1400)

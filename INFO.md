@@ -175,7 +175,7 @@ and CRCs, and removes the originals, metadata sidecars and temporary files. Only
 Audio is not recompressed; folder structure, filenames, artwork and supplementary files are preserved.
 Symlinks are excluded and removed without following them. Packaging temporarily needs additional
 space for the ZIP before originals can be deleted. The queue shows **Создаётся ZIP** until completion;
-partial downloads from failed/cancelled jobs are archived as well.
+completed files from failed/cancelled jobs are archived as well; incomplete transfers are excluded.
 
 If packaging or source cleanup fails, originals are kept where possible, the UI shows an error,
 and **Повторить архивацию** / **Повторить** retries without downloading again. A commit marker
@@ -296,6 +296,15 @@ minute and retain 200 unexpired records; the server accepts up to 2000 unexpired
 records. File-free history beyond the latest 200 records is pruned without dropping
 records needed for file cleanup. Log saves are coalesced for up to 500 ms; status
 changes are saved immediately.
+
+Media transfers request sequential 8 MiB HTTP ranges and write in 64 KiB blocks.
+After connection loss, up to four retries use exponential delays (1, 2, 4, 8 seconds).
+Resumption checks `Content-Range`, total size and a strong ETag or Last-Modified
+validator via `If-Range`. Servers ignoring Range safely restart the file; servers
+without a usable version validator fall back to a full-file transfer. Invalid or
+changed partial responses fail without publishing a file. Completed transfers are
+renamed atomically from `.qws-work`; failures remove their temporary data.
+Resumption applies within a running job, not across cancellation or server restarts.
 
 Streaming downloads enforce byte/free-space budgets, and the worker directory is
 checked every second. These application checks do not replace filesystem quotas;
