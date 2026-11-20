@@ -145,6 +145,7 @@ export class DownloadQueue {
         job.finishedAt = new Date().toISOString();
         if (job.kind === "lyrics-upload") rmSync(this.folder(job), { recursive: true, force: true });
       }
+      this.readTrackMetadata(job);
       job.title ||= this.readTitle(job);
       try { job.sizeBytes = folderBytes(this.folder(job)); }
       catch { job.sizeBytes = 0; }
@@ -217,7 +218,7 @@ export class DownloadQueue {
       kind: "lyrics-upload", filename, title: filename, metadata, status: "uploading" });
   }
 
-  enqueue({ url, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, status = "queued" }) {
+  enqueue({ url, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, parentJobId, parentTrackId, status = "queued" }) {
     if (
       !Number.isInteger(retentionHours) ||
       retentionHours < 1 ||
@@ -247,7 +248,7 @@ export class DownloadQueue {
       url,
       quality,
       lyrics,
-      kind, filename, title, metadata,
+      kind, filename, title, metadata, parentJobId, parentTrackId,
       status,
       createdAt: new Date().toISOString(),
       log: "",
@@ -396,6 +397,7 @@ export class DownloadQueue {
         pending = lines.pop();
         if (lines.length) {
           job.log = (job.log + redact(lines.join("\n"), [environment.QOBUZ_AUTH_TOKEN]) + "\n").slice(-24000);
+          this.readTrackMetadata(job);
           job.title ||= this.readTitle(job);
           this.saveSoon();
         }
@@ -460,6 +462,7 @@ export class DownloadQueue {
       job.expiresAt = new Date(
         Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
       ).toISOString();
+      this.readTrackMetadata(job);
       job.title ||= this.readTitle(job);
       job.downloadStatus = job.status;
       job.status = "archiving";
@@ -542,6 +545,54 @@ export class DownloadQueue {
     )
       throw new Error("Invalid job directory");
     return join(this.settings.downloads, job.id);
+  }
+
+  readTrackMetadata(job) {
+    if (!job.url?.includes('/album/')) return;
+    try {
+      const file = join(this.folder(job), '.qws-metadata.json');
+      const stat = lstatSync(file);
+      if (!stat.isFile() || stat.size > 8 * 1024 ** 2) return;
+      const { tracks } = JSON.parse(readFileSync(file, 'utf8'));
+      if (!Array.isArray(tracks) || tracks.length > 10000) return;
+      const clean = (value) => typeof value === 'string'
+        ? Array.from(value.replace(/[\x00-\x1f\x7f]/g, ' ').trim()).slice(0, 500).join('') : '';
+      const ids = new Set();
+      job.tracks = tracks.map((track, index) => {
+        if (!track || typeof track.id !== 'string' || !/^[a-zA-Z0-9]{1,100}$/.test(track.id) || ids.has(track.id) ||
+            !['pending', 'running', 'completed', 'failed', 'skipped'].includes(track.status)) throw new Error('Invalid track');
+        ids.add(track.id);
+        return { id: track.id, title: clean(track.title) || `Трек ${index + 1}`,
+          artist: clean(track.artist), number: index + 1, status: track.status };
+      });
+    } catch {} // Metadata is optional; preserve the last complete snapshot.
+  }
+
+  albumTracks(job) {
+    this.readTrackMetadata(job);
+    const active = ['queued', 'running', 'archiving'].includes(job.status);
+    return (job.tracks || []).map((track) => {
+      const retry = this.jobs.find((item) => item.parentJobId === job.id && item.parentTrackId === track.id);
+      return { ...track,
+        status: !active && ['pending', 'running'].includes(track.status) ? 'not_downloaded' : track.status,
+        retry: retry ? { id: retry.id, status: retry.status } : null };
+    });
+  }
+
+  retryTrack(job, trackId, user) {
+    if (!this.canAccess(job, user) || !job.url?.includes('/album/'))
+      throw Object.assign(new Error('Альбом не найден.'), { statusCode: 404 });
+    const track = this.albumTracks(job).find((item) => item.id === trackId);
+    if (!track) throw Object.assign(new Error('Трек не найден.'), { statusCode: 404 });
+    if (['pending', 'running'].includes(track.status))
+      throw Object.assign(new Error('Дождитесь завершения загрузки трека.'), { statusCode: 409 });
+    const pending = this.jobs.find((item) => item.parentJobId === job.id && item.parentTrackId === trackId &&
+      ['queued', 'running', 'archiving'].includes(item.status));
+    if (pending) return pending;
+    return this.enqueue({ url: `https://open.qobuz.com/track/${track.id}`, quality: job.quality,
+      retentionHours: job.retentionHours, lyrics: job.lyrics === true, userId: user.id,
+      title: track.artist ? `${track.artist} - ${track.title}` : track.title,
+      parentJobId: job.id, parentTrackId: track.id });
   }
 
   readTitle(job) {

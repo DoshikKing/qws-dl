@@ -599,6 +599,11 @@ onBeforeUnmount(() => clearInterval(timer));
                         <p v-if="job.error" class="job-error" role="status">
                           {{ job.error }}
                         </p>
+                        <AlbumTracks
+                          v-if="job.kind !== 'lyrics-upload' && job.url.includes('/album/')"
+                          :job-id="job.id" :status="job.status" :ready="status?.ready || false"
+                          @queued="refresh"
+                        />
                         <Transition name="disclosure"
                           ><div
                             v-if="selectedJob === job.id"

@@ -50,8 +50,14 @@ def main():
     # Upstream can return exit 0 even when individual tracks fail.
     class Output:
         failed = False
+        pending = ""
 
         def write(self, text):
+            self.pending += text
+            lines = self.pending.split('\n')
+            self.pending = lines.pop()[-64000:]
+            for line in lines:
+                observe(line)
             if re.search(r'=== Track .+ failed ===|Tagging failed', text):
                 self.failed = True
             return sys.__stdout__.write(text)
@@ -63,7 +69,7 @@ def main():
             return False
 
     from modules.qobuz.interface import ModuleInterface
-    install_title_reporter(ModuleInterface, url)
+    observe = install_title_reporter(ModuleInterface, url)
 
     output = Output()
     sys.stdout = output

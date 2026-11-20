@@ -43,6 +43,40 @@ class MediaTitleTest(unittest.TestCase):
                 self.assertEqual(len(calls), 2)
                 self.assertFalse(Path(directory, '.qws-metadata.json.tmp').exists())
 
+class AlbumTracksTest(unittest.TestCase):
+    def test_album_track_manifest_updates_without_extra_catalog_requests(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, DOWNLOAD_DIR=directory):
+            data = {'11': {'title': 'Песня', 'version': 'Live', 'performer': {'name': 'Гость'}},
+                    '22': {'title': 'Вторая песня'}}
+            info = SimpleNamespace(name='Альбом', artist='Автор', tracks=['11', '22'], track_extra_kwargs={'data': data})
+            class Module:
+                def get_album_info(self, album_id):
+                    return info
+                def get_track_info(self, track_id, *args, **kwargs):
+                    if track_id == '22':
+                        raise RuntimeError('fixture failure')
+                    return 'fixture track'
+            observe = install_title_reporter(Module, 'https://open.qobuz.com/album/123')
+            module = Module()
+            self.assertIs(module.get_album_info('123'), info)
+            target = Path(directory, '.qws-metadata.json')
+            read = lambda: json.loads(target.read_text())['tracks']
+            self.assertEqual([track['status'] for track in read()], ['pending', 'pending'])
+            self.assertEqual(read()[0]['title'], 'Песня (Live)')
+            self.assertEqual(read()[0]['artist'], 'Гость')
+            self.assertEqual(module.get_track_info('11', 'quality', data=data), 'fixture track')
+            self.assertEqual(read()[0]['status'], 'running')
+            observe('    === Track 11 downloaded ===')
+            self.assertEqual(read()[0]['status'], 'completed')
+            observe('    === Track 999 failed ===')
+            self.assertEqual(read()[0]['status'], 'completed')
+            with self.assertRaises(RuntimeError):
+                module.get_track_info('22')
+            self.assertEqual(read()[1]['status'], 'failed')
+            observe('=== Track 22 skipped ===')
+            self.assertEqual(read()[1]['status'], 'skipped')
+            self.assertFalse(target.with_suffix('.json.tmp').exists())
+
 
 if __name__ == '__main__':
     unittest.main()

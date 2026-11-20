@@ -156,6 +156,20 @@ Requests run on explicit submission, with a 45-second timeout, one search per us
 two searches globally at once. Errors never include upstream response bodies or credentials.
 Availability and actual download quality depend on Qobuz and the configured account.
 
+## Album track lists and individual retries
+
+Album jobs have a **Список треков** disclosure in the downloads queue. New jobs save
+track names and download states from metadata already fetched by OrpheusDL; the
+list becomes available when the worker starts processing the album. It persists
+in job history after ZIP creation and server restarts. Older archived jobs have
+no saved track list. The expanded list refreshes every three seconds.
+
+**Повторить** queues one track with the album's quality, lyrics setting and retention
+period. It produces a separate job and ZIP; it does not replace the original album
+archive. An unfinished track cannot be retried until its attempt finishes or the
+album stops. Repeated clicks reuse the same active retry. Normal account quotas
+and ownership checks apply to both the manifest and the retry endpoint.
+
 ## ZIP downloads and automatic expiry
 
 Select **1–24 hours** when adding a download. `DOWNLOAD_RETENTION_HOURS` supplies the default.
