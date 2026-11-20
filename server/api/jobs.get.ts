@@ -4,5 +4,5 @@ export default defineEventHandler((event) => {
   queue.cleanupExpired();
   return queue.jobs.filter((job: { userId?: string }) =>
     queue.canAccess(job, event.context.user),
-  ).map(({ tracks, ...job }: any) => ({ ...job, trackCount: tracks?.length || 0 }));
+  ).map(({ tracks, ...job }: any) => ({ ...job, ...queue.albumOutcome({ ...job, tracks }), trackCount: tracks?.length || 0 }));
 });

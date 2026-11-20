@@ -5,6 +5,7 @@ type Archive = {
   title: string;
   size: number;
   status: string;
+  downloadWarning?: boolean;
   archiveError: string | null;
   expiresAt: string;
   owner?: string;
@@ -175,6 +176,7 @@ async function retry(file: Archive) {
                         : size(file.size)
                   }}<span>·</span>До {{ date(file.expiresAt) }}
                 </p>
+                <p v-if="file.downloadWarning" class="archive-warning"><AppIcon name="alert" />Загружено с ошибками</p>
                 <p v-if="file.archiveError" class="form-error" role="status">
                   {{ file.archiveError }}
                 </p>
@@ -248,3 +250,8 @@ async function retry(file: Archive) {
     </form>
   </dialog>
 </template>
+
+<style scoped>
+.archive-warning { display: flex; gap: 6px; align-items: center; color: var(--warning); font-size: 12px; margin-top: 6px; }
+.archive-warning .app-icon { width: 16px; height: 16px; }
+</style>

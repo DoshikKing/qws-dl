@@ -19,7 +19,7 @@ test('album manifest survives archives/restarts; track retries preserve settings
     const metadata = join(folder, '.qws-metadata.json');
     await writeFile(metadata, JSON.stringify({ tracks: [
       { id: '11', title: 'Песня', artist: 'Автор', status: 'completed' },
-      { id: '22', title: 'Неудачный трек', status: 'failed' },
+      { id: '22', title: 'Неудачный трек', status: 'failed', error: 'Соединение прервано.' },
       { id: '33', title: 'Ещё загружается', status: 'running' },
     ] }));
     assert.equal(queue.albumTracks(album).length, 3);
@@ -29,6 +29,12 @@ test('album manifest survives archives/restarts; track retries preserve settings
     assert.throws(() => queue.retryTrack(album, '33', owner), { statusCode: 409 });
     assert.throws(() => queue.retryTrack(album, '11', owner), { statusCode: 429 });
     album.status = 'failed';
+    album.error = 'OrpheusDL сообщил об ошибке. Подробности в журнале; часть файлов могла сохраниться.';
+    assert.deepEqual(queue.albumOutcome(album), { downloadWarning: true, trackFailureOnly: true });
+    assert.equal(queue.albumTracks(album)[1].error, 'Соединение прервано.');
+    const failedOnly = { ...album, tracks: [album.tracks[1]] };
+    assert.equal(queue.albumOutcome(failedOnly).downloadWarning, false);
+    assert.equal(queue.albumOutcome({ ...album, error: 'Превышено время загрузки.' }).trackFailureOnly, false);
     const retry = queue.retryTrack(album, '22', owner);
     assert.equal(retry.url, 'https://open.qobuz.com/track/22');
     assert.equal(retry.quality, 'lossless');

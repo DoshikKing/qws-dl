@@ -77,6 +77,29 @@ class AlbumTracksTest(unittest.TestCase):
             self.assertEqual(read()[1]['status'], 'skipped')
             self.assertFalse(target.with_suffix('.json.tmp').exists())
 
+    def test_failures_belong_to_the_track_without_exposing_upstream_secrets(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, DOWNLOAD_DIR=directory):
+            class Module:
+                def get_album_info(self, album_id):
+                    return SimpleNamespace(name='Альбом', artist='Автор', tracks=['11', '22'])
+                def get_track_info(self, track_id):
+                    return 'fixture'
+            observe = install_title_reporter(Module, 'https://open.qobuz.com/album/123')
+            module = Module()
+            module.get_album_info('123')
+            module.get_track_info('11')
+            observe('Warning: Track download failed: Соединение прервано; попытки докачки исчерпаны.')
+            observe('=== Track 11 failed ===')
+            module.get_track_info('22')
+            observe('Warning: Track download failed: https://cdn.example/audio?token=fixture-secret')
+            observe('=== Track 22 failed ===')
+            raw = Path(directory, '.qws-metadata.json').read_text()
+            tracks = json.loads(raw)['tracks']
+            self.assertEqual(tracks[0]['error'], 'Соединение прервано; попытки докачки исчерпаны.')
+            self.assertEqual(tracks[1]['error'], 'Не удалось скачать аудиофайл.')
+            self.assertNotIn('fixture-secret', raw)
+            self.assertNotIn('https://', raw)
+
 
 if __name__ == '__main__':
     unittest.main()

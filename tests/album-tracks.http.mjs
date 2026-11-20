@@ -62,7 +62,7 @@ folder = Path(os.environ['DOWNLOAD_DIR'])
 if '/album/' in sys.argv[-2]:
     (folder / '.qws-metadata.json').write_text(json.dumps({'title': 'Автор - Альбом', 'tracks': [
         {'id': '11', 'title': 'Готовая песня', 'artist': 'Автор', 'status': 'completed'},
-        {'id': '22', 'title': 'Ошибка загрузки', 'artist': 'Автор', 'status': 'failed'},
+        {'id': '22', 'title': 'Ошибка загрузки', 'artist': 'Автор', 'status': 'failed', 'error': 'Соединение прервано.'},
         {'id': '33', 'title': 'Ожидает', 'artist': 'Автор', 'status': 'pending'}]}))
     print('Название: Автор - Альбом', flush=True)
     time.sleep(0.5)
@@ -111,6 +111,10 @@ time.sleep(0.5)
     assert.equal((await request(`/api/jobs/${retry.id}/archive`, bob)).status, 404);
     const list = await (await request(path, alice)).json();
     assert.equal(list.tracks[2].status, 'not_downloaded');
+    assert.equal(list.tracks[1].error, 'Соединение прервано.');
+    const finalAlbum = (await (await request('/api/jobs', alice)).json()).find(job => job.id === album.id);
+    assert.equal(finalAlbum.downloadWarning, true);
+    assert.equal(finalAlbum.trackFailureOnly, true);
     assert.equal(list.tracks[1].retry.status, 'completed');
     assert.equal(JSON.parse(await readFile(join(data, 'jobs.json'), 'utf8')).find(job => job.id === album.id).tracks.length, 3);
     await stop();

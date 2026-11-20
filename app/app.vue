@@ -14,6 +14,8 @@ type Job = {
   expiredAt?: string;
   deletedAt?: string;
   archiveError?: string;
+  downloadWarning?: boolean;
+  trackFailureOnly?: boolean;
   hasFiles: boolean;
   cleanupError?: string;
 };
@@ -289,11 +291,6 @@ onBeforeUnmount(() => clearInterval(timer));
             >
           </button>
         </nav>
-        <div class="sidebar-footer">
-          <span class="connection-dot" :class="{ ready: status?.ready }" /><span
-            >Qobuz</span
-          ><small>{{ status?.ready ? "Настроен" : "Не настроен" }}</small>
-        </div>
       </aside>
 
       <main class="main-content">
@@ -482,7 +479,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         :data-status="job.status"
                       >
                         <div class="job-main">
-                          <div class="item-icon" :data-status="job.status">
+                          <div class="item-icon" :data-status="job.archiveError ? 'failed' : job.downloadWarning ? 'warning' : job.status">
                             <span
                               v-if="['running', 'archiving'].includes(job.status)"
                               class="spinner"
@@ -522,12 +519,12 @@ onBeforeUnmount(() => clearInterval(timer));
                           <span
                             class="status-badge"
                             :data-status="
-                              job.archiveError ? 'failed' : job.status
+                              job.archiveError ? 'failed' : job.downloadWarning ? 'warning' : job.status
                             "
                             >{{
                               job.archiveError
                                 ? "Ошибка архивации"
-                                : labels[job.status]
+                                : job.downloadWarning ? "Загружено с ошибками" : labels[job.status]
                             }}</span
                           >
                           <div class="job-actions">
@@ -596,7 +593,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         <p v-if="job.archiveError" class="job-error" role="alert">
                           {{ job.archiveError }}
                         </p>
-                        <p v-if="job.error" class="job-error" role="status">
+                        <p v-if="job.error && !job.trackFailureOnly" class="job-error" role="status">
                           {{ job.error }}
                         </p>
                         <AlbumTracks
@@ -604,15 +601,9 @@ onBeforeUnmount(() => clearInterval(timer));
                           :job-id="job.id" :status="job.status" :ready="status?.ready || false"
                           @queued="refresh"
                         />
-                        <Transition name="disclosure"
-                          ><div
-                            v-if="selectedJob === job.id"
-                            :id="`log-${job.id}`"
-                            class="log-container"
-                          >
-                            <JobLog :log="job.log" />
-                          </div></Transition
-                        >
+                        <DisclosurePanel :id="`log-${job.id}`" :open="selectedJob === job.id">
+                          <div class="log-container"><JobLog :log="job.log" /></div>
+                        </DisclosurePanel>
                       </article>
                     </TransitionGroup>
                   </section>

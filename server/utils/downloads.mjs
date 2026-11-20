@@ -23,6 +23,7 @@ export async function listArchives(queue, user, owners = null) {
       title: job.title || archiveFilename(job),
       size,
       status: job.status,
+      downloadWarning: queue.albumOutcome(job).downloadWarning,
       archiveError: job.archiveError || null,
       expiresAt: job.expiresAt,
       ...(owners

@@ -563,9 +563,18 @@ export class DownloadQueue {
             !['pending', 'running', 'completed', 'failed', 'skipped'].includes(track.status)) throw new Error('Invalid track');
         ids.add(track.id);
         return { id: track.id, title: clean(track.title) || `Трек ${index + 1}`,
-          artist: clean(track.artist), number: index + 1, status: track.status };
+          artist: clean(track.artist), number: index + 1, status: track.status, error: clean(track.error) || null };
       });
     } catch {} // Metadata is optional; preserve the last complete snapshot.
+  }
+
+  albumOutcome(job) {
+    const album = job.url?.includes('/album/');
+    const failedTracks = album && job.tracks?.some((track) => track.status === 'failed');
+    return {
+      downloadWarning: !!(job.status === 'failed' && failedTracks && job.tracks.some((track) => track.status === 'completed')),
+      trackFailureOnly: !!(failedTracks && job.error === 'OrpheusDL сообщил об ошибке. Подробности в журнале; часть файлов могла сохраниться.'),
+    };
   }
 
   albumTracks(job) {
@@ -575,7 +584,7 @@ export class DownloadQueue {
       const retry = this.jobs.find((item) => item.parentJobId === job.id && item.parentTrackId === track.id);
       return { ...track,
         status: !active && ['pending', 'running'].includes(track.status) ? 'not_downloaded' : track.status,
-        retry: retry ? { id: retry.id, status: retry.status } : null };
+        retry: retry ? { id: retry.id, status: retry.status, error: retry.error || null } : null };
     });
   }
 

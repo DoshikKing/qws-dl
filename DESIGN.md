@@ -41,6 +41,12 @@ Administrator storage management must identify the archive and its owner before 
   slowly. Respect `prefers-reduced-motion`; do not animate essential information.
 - Do not remove focus on navigation or leave focus inside a hidden dialog.
 
+Album track lists and job logs expand and collapse with a 240ms height transition;
+respect reduced motion and keep collapsed controls out of keyboard navigation.
+Show per-track download failures beside the song. Partly downloaded albums use a
+warning icon and «Загружено с ошибками»; keep infrastructure errors visible.
+The sidebar has no connection-status footer; Qobuz status remains in Settings.
+
 Qobuz connection belongs in administrator settings. The sign-in button opens the
 service's own login page; credentials are entered there. After returning, show a
 short success or retry message without codes, tokens, or provider response bodies.

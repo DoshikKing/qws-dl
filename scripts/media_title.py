@@ -13,6 +13,8 @@ def install_title_reporter(module, url):
     method_name = f'get_{kind}_info'
     original = getattr(module, method_name)
     metadata = {}
+    current_track = None
+    download_error = None
     target = Path(os.environ['DOWNLOAD_DIR']) / '.qws-metadata.json'
 
     def save():
@@ -23,16 +25,31 @@ def install_title_reporter(module, url):
     def clean(value):
         return re.sub(r'[\x00-\x1f\x7f]', ' ', str(value or '')).strip()[:500]
 
-    def update(track_id, status):
+    def update(track_id, status, error=None):
         track = next((item for item in metadata.get('tracks', []) if item['id'] == str(track_id)), None)
         if track and track['status'] != status:
             track['status'] = status
+            track['error'] = error if status == 'failed' else None
             save()
 
     def observe(line):
+        nonlocal download_error
+        if line.strip().startswith('Warning: Track download failed:'):
+            # Never expose upstream exception text: it can contain signed URLs/tokens.
+            download_error = 'Не удалось скачать аудиофайл.'
+            for marker, message in (
+                ('попытки докачки исчерпаны', 'Соединение прервано; попытки докачки исчерпаны.'),
+                ('Лимит', 'Лимит загрузки или свободного места исчерпан.'),
+                ('диапазон', 'Сервер вернул некорректный диапазон файла.'),
+                ('версия файла', 'Версия файла изменилась при докачке.'),
+            ):
+                if marker.casefold() in line.casefold():
+                    download_error = message
+                    break
         match = re.fullmatch(r'\s*=== Track ([a-zA-Z0-9]+) (downloaded|failed|skipped) ===\s*', line)
         if match:
-            update(match[1], {'downloaded': 'completed', 'failed': 'failed', 'skipped': 'skipped'}[match[2]])
+            update(match[1], {'downloaded': 'completed', 'failed': 'failed', 'skipped': 'skipped'}[match[2]],
+                   download_error if match[1] == current_track and download_error else 'Не удалось скачать аудиофайл.')
 
     @wraps(original)
     def get_info(self, requested_id, *args, **kwargs):
@@ -69,11 +86,13 @@ def install_title_reporter(module, url):
 
         @wraps(original_track)
         def get_track(self, track_id, *args, **kwargs):
+            nonlocal current_track, download_error
+            current_track, download_error = str(track_id), None
             update(track_id, 'running')
             try:
                 return original_track(self, track_id, *args, **kwargs)
             except Exception:
-                update(track_id, 'failed')
+                update(track_id, 'failed', 'Не удалось получить данные трека Qobuz.')
                 raise
 
         module.get_track_info = get_track

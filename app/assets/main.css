@@ -348,28 +348,6 @@ code {
   border-radius: 10px;
   background: rgb(255 255 255 / 24%);
 }
-.sidebar-footer {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 20px 12px 0;
-  font-size: 12px;
-}
-.sidebar-footer small {
-  margin-left: auto;
-  color: var(--secondary);
-  font-size: 11px;
-}
-.connection-dot {
-  width: 6px;
-  height: 6px;
-  background: var(--tertiary);
-  border-radius: 50%;
-}
-.connection-dot.ready {
-  background: var(--success);
-}
 .main-content {
   flex: 1;
   min-width: 0;
@@ -673,6 +651,8 @@ a.item-title:hover {
   color: var(--danger);
   background: var(--danger-fill);
 }
+.item-icon[data-status="warning"],
+.status-badge[data-status="warning"],
 .status-badge[data-status="queued"] {
   color: var(--warning);
   background: var(--warning-fill);
@@ -987,17 +967,13 @@ a.item-title:hover {
   transform: translateY(-4px);
 }
 .notice-enter-active,
-.notice-leave-active,
-.disclosure-enter-active,
-.disclosure-leave-active {
+.notice-leave-active {
   transition:
     opacity 0.18s ease,
     transform 0.18s ease;
 }
 .notice-enter-from,
-.notice-leave-to,
-.disclosure-enter-from,
-.disclosure-leave-to {
+.notice-leave-to {
   opacity: 0;
   transform: translateY(-4px);
 }
@@ -1063,8 +1039,7 @@ a.item-title:hover {
     border: 0;
     border-top: 1px solid var(--line);
   }
-  .app-identity,
-  .sidebar-footer {
+  .app-identity {
     display: none;
   }
   .navigation {
