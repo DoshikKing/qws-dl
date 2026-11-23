@@ -17,3 +17,17 @@ Every application update must add a new entry at the start of
 user-facing changes. Never reuse an announced id for a new update: per-user
 dismissal is keyed by that id. Keep newest entries first and at most 50 entries.
 Do not include secrets, internal credentials or unverified claims in release notes.
+
+## GitHub Releases
+
+For each application release, increment stable SemVer in `package.json` and both
+root version fields in `package-lock.json` (patch for fixes, minor for compatible
+features, major for breaking changes). The newest `server/utils/news.mjs` entry
+must have the same `version`, normal Russian content and an `english` object with
+translated `title`, `summary` and `sections`. Describe changes since the previous
+release; the first versioned release is a baseline, not a claim of past releases.
+Do not create per-version changelog files in the repository. The Release workflow
+publishes English descriptions, Russian Markdown, committed sources and checksums
+as GitHub Release assets after validation. Never move an existing version tag or
+replace a published release: fix errors in a new version. Always check the Release
+workflow result after pushing a new version; a source commit alone is not a release.

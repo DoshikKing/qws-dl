@@ -10,3 +10,5 @@ downloads
 test-results
 playwright-report
 __pycache__
+
+release

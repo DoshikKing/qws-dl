@@ -1,0 +1,77 @@
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate version and check for an existing release
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=$(node scripts/release.mjs --tag)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$tag\") | [.draft, .target_commitish] | @tsv")
+          if [ -n "$existing" ]; then
+            read -r draft target <<< "$existing"
+            if [ "$draft" = false ]; then
+              echo 'publish=false' >> "$GITHUB_OUTPUT"
+              echo "$tag is already published; bump package.json and add bilingual news for the next release."
+              exit 0
+            fi
+            test "$target" = "$GITHUB_SHA"
+            echo 'draft=true' >> "$GITHUB_OUTPUT"
+          fi
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            test "$(git rev-list -n 1 "$tag")" = "$GITHUB_SHA"
+          fi
+          echo 'publish=true' >> "$GITHUB_OUTPUT"
+      - name: Install dependencies
+        if: steps.version.outputs.publish == 'true'
+        run: npm ci
+      - name: Validate and build
+        if: steps.version.outputs.publish == 'true'
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Package committed sources and bilingual notes
+        if: steps.version.outputs.publish == 'true'
+        run: node scripts/release.mjs
+      - name: Publish release after uploading every asset
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          DRAFT_EXISTS: ${{ steps.version.outputs.draft }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$DRAFT_EXISTS" != true ]; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "QWS $TAG" --notes-file release/RELEASE_NOTES.en.md --draft
+          fi
+          gh release upload "$TAG" "release/qws-dl-$TAG-source.tar.gz" release/RELEASE_NOTES.en.md release/RELEASE_NOTES.ru.md release/SHA256SUMS --clobber
+          gh release edit "$TAG" --notes-file release/RELEASE_NOTES.en.md --draft=false --latest

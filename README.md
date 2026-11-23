@@ -9,6 +9,24 @@ Users can manually delete their own archives from Archives, with confirmation; d
 The administrator manages accounts and can delete any download from Storage.
 Choose **1–24 hours** or **1–15 completed downloads** per job; counted archives also expire after one week by default (admin configurable from 1 hour to 30 days). Archives are removed when either limit is reached. Administrators can save application defaults in Settings. Source files are removed after ZIP verification.
 
+## Versioned releases
+
+[GitHub Releases](https://github.com/DoshikKing/qws-dl/releases) contains version
+tags (`vMAJOR.MINOR.PATCH`), English change descriptions, a link to Russian notes,
+a `qws-dl-vX.Y.Z-source.tar.gz` archive, and `SHA256SUMS`. Extract the archive,
+copy `.env.example` to `.env`, set administrator credentials and run
+`docker compose up -d --build`. The archive contains committed sources only;
+Docker builds the full runtime locally. It is not a prebuilt application binary.
+
+To publish the next version, increment `package.json` and the matching root fields
+in `package-lock.json`, then add a news entry in `server/utils/news.mjs` with the
+same `version` and its English translation in `english`. Push to `main`: the
+**Release** workflow checks types, runs Node tests, builds the app and publishes the
+tag and assets. An already published version is left intact; a failed draft can
+be retried from Actions → Release → Run workflow at the same commit. Release
+Markdown files are generated as assets and are not accumulated in the repository.
+The initial version is a snapshot of current features; earlier history remains in Git.
+
 ## Disclaimer
 
 QWS is an **unofficial web UI and process runner for third-party software**.

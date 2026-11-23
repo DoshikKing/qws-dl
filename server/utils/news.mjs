@@ -1,6 +1,40 @@
 // Newest first. Every app update needs a new unique id and factual release notes.
 export const releases = [
   {
+    id: '2026-11-23-github-releases', version: '1.0.0', date: '2026-11-23', title: 'Первый версионный релиз',
+    summary: 'Релизы QWS теперь имеют версии, теги и отдельные архивы на GitHub.',
+    sections: [
+      { title: 'Релизы на GitHub', items: [
+        'Каждый релиз содержит английское описание изменений и ссылку на русский файл, архив исходников и контрольные суммы SHA-256.',
+        'Архив можно распаковать и развернуть через Docker Compose. Проверки и сборка выполняются до публикации.',
+        'Следующие версии будут доступны в GitHub Releases с тегами и ссылками на сравнение изменений.',
+      ] },
+      { title: 'Что входит в v1.0.0', items: [
+        'Поиск треков, альбомов и исполнителей с обложками, загрузки через OrpheusDL и Qobuz, докачка после обрыва и повтор отдельных треков.',
+        'Тексты через LRCLIB с тегами и файлами .lrc, обработка загруженных пользователем аудиофайлов и настройки восьми выходных форматов.',
+        'Личные архивы, хранение по времени или числу скачиваний, приглашения, администрирование и сохраняемые настройки по умолчанию.',
+        'Новости приложения и уточнённая проверка срока подписки Qobuz без ложного истечения по исторической дате.',
+      ] },
+    ],
+    english: {
+      title: 'First versioned release',
+      summary: 'QWS now has numbered GitHub releases with tags, downloadable sources and bilingual release notes.',
+      sections: [
+        { title: 'Release distribution', items: [
+          'English release descriptions link to a separate Russian Markdown asset. Each release includes a source archive and SHA-256 checksums.',
+          'Extract the source archive and deploy with Docker Compose. Validation and the application build run before publication.',
+          'Future versions will appear in GitHub Releases with version tags and comparison links.',
+        ] },
+        { title: 'Included in v1.0.0', items: [
+          'Track, album and artist search with artwork; OrpheusDL/Qobuz downloads; interrupted-transfer resume and per-track retries.',
+          'LRCLIB lyrics embedded in tags and .lrc sidecars, user-uploaded audio enrichment, and configurable conversion to eight output formats.',
+          'Personal archives, retention by time or completed downloads, invitations, administration and persistent application defaults.',
+          'In-app update news and corrected subscription checks that do not infer Qobuz expiry from historical billing dates.',
+        ] },
+      ],
+    },
+  },
+  {
     id: '2026-11-23-qobuz-date-fix', date: '2026-11-23', title: 'Уточнение срока подписки Qobuz',
     summary: 'Исправлено ложное сообщение об окончании подписки по старой дате Qobuz.',
     sections: [{ title: 'Подписка Qobuz', items: [
