@@ -27,7 +27,7 @@ WORKDIR /app
 COPY --from=audio-codecs /opt/audio-codecs /opt/audio-codecs
 COPY scripts ./scripts
 COPY shared ./shared
-COPY server/utils/qobuz-session.mjs ./server/utils/qobuz-session.mjs
+COPY server/utils/qobuz-session.mjs server/utils/qobuz-subscription.mjs ./server/utils/
 COPY requirements-orpheus.lock ./
 RUN --mount=type=secret,id=build_ca \
     if [ -f /run/secrets/build_ca ]; then \

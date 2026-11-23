@@ -126,3 +126,9 @@ After signing in, a new release shows an in-app notification once. Click it for
 detailed notes, or open **Новости** in the toolbar at any time. Closing the
 notification or reader dismisses that release for your account across logins and
 devices. A new release can notify again. No browser notification permission is required.
+
+
+Administrators can see the Qobuz subscription period in the page-heading indicator
+and in Settings: end date, remaining days and known auto-renewal status. A warning
+appears within seven days. Missing dates or stale data are labelled explicitly;
+this is not inferred from token expiry. Ordinary users do not receive these details.

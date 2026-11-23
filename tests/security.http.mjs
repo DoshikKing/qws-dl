@@ -18,7 +18,7 @@ test('HTTP security: bounded bodies, independent limits, revocation while readin
   await mkdir(join(root,'modules/qobuz'),{recursive:true});await mkdir(join(base,'data'));
   await writeFile(join(root,'orpheus.py'),'# fixture');await writeFile(join(root,'modules/qobuz/interface.py'),'# fixture');
   await writeFile(python,'#!/bin/sh\nif [ "$1" = "-u" ]; then sleep 10; fi\nexit 0\n',{mode:0o700});
-  await writeFile(join(base,'data/qobuz-session.json'),JSON.stringify({userId:'123',authToken:'fixture-token',updatedAt:new Date().toISOString()}));
+  await writeFile(join(base,'data/qobuz-session.json'),JSON.stringify({userId:'123',authToken:'fixture-token',updatedAt:new Date().toISOString(),subscription:null}));
   const server=spawn(process.execPath,['.output/server/index.mjs'],{env:{...process.env,HOST:'127.0.0.1',PORT:String(port),NUXT_APP_BASE_URL:'/',ADMIN_USERNAME:'admin',ADMIN_PASSWORD:'fixture-admin-password',DATA_DIR:join(base,'data'),DOWNLOAD_DIR:join(base,'downloads'),ORPHEUS_DIR:root,PYTHON_BIN:python,MAX_USER_JOBS:'2',MIN_FREE_BYTES:'0',TRUST_PROXY:'false'},stdio:'ignore'});
   const api=(path,body,cookie)=>fetch(origin+path,{method:'POST',headers:{'content-type':'application/json',cookie:cookie||''},body:JSON.stringify(body)});
   const streaming=(path,cookie)=>{

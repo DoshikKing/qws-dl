@@ -7,7 +7,7 @@
   -webkit-font-smoothing: antialiased;
   --canvas: #f7f8fa;
   --panel: #ffffff;
-  --sidebar: #f0f2f5;
+  --sidebar: #f4f5f7;
   --toolbar: #f7f8fa;
   --text: #20242b;
   --secondary: #596270;
@@ -1104,7 +1104,7 @@ a.item-title:hover {
     color-scheme: dark;
     --canvas: #13161b;
     --panel: #1b1f26;
-    --sidebar: #171a20;
+    --sidebar: #20242b;
     --toolbar: #13161b;
     --text: #eef0f5;
     --secondary: #abb3bf;
@@ -1800,3 +1800,6 @@ a.item-title:hover {
 @media (prefers-reduced-motion: reduce) { .skip-link { transition: none; } }
 
 @media (max-width: 1100px) { .toolbar-title { display: none; } }
+
+.heading-tools { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; max-width: 100%; }
+@media (max-width: 760px) { .page-heading { flex-wrap: wrap; gap: 16px; } .heading-tools { align-items: flex-start; } }

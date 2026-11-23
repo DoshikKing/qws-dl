@@ -3,6 +3,7 @@ import { readQobuzSession, saveQobuzSession } from './qobuz-session.mjs';
 
 export function renewalDue(session, now = Date.now()) {
   if (!session || session.needsLogin) return false;
+  if (!Object.hasOwn(session, 'subscription')) return true;
   if (!Number.isFinite(Date.parse(session.updatedAt)) || now - Date.parse(session.updatedAt) >= 30 * 60_000) return true;
   // JWT expiry is only a scheduling hint, never proof of authentication.
   try {

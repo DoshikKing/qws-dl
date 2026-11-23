@@ -82,9 +82,9 @@ test('renewal rotates tokens, bounds retries, stops on revocation and cannot ove
     assert.equal(readQobuzSession(data).updatedAt, new Date(now).toISOString());
     await service.refresh(now + 60_000);
     assert.equal(calls, 1);
-    assert.equal(renewalDue({ authToken: 'opaque', updatedAt: new Date(now).toISOString() }, now), false);
+    assert.equal(renewalDue({ authToken: 'opaque', subscription: null, updatedAt: new Date(now).toISOString() }, now), false);
     const jwt = 'x.' + Buffer.from(JSON.stringify({ exp: now / 1000 + 120 })).toString('base64url') + '.x';
-    assert.equal(renewalDue({ authToken: jwt, updatedAt: new Date(now).toISOString() }, now), true);
+    assert.equal(renewalDue({ authToken: jwt, subscription: null, updatedAt: new Date(now).toISOString() }, now), true);
     old();
     let release;
     handler = () => new Promise(resolve => { release = resolve; });

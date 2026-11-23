@@ -166,7 +166,7 @@ else:
         { mode: 0o700 },
       );
       await mkdir(join(base, 'data'), { recursive: true });
-      await writeFile(join(base, 'data/qobuz-session.json'), JSON.stringify({ userId: '12345', authToken: 'test-session-secret', updatedAt: new Date().toISOString() }));
+      await writeFile(join(base, 'data/qobuz-session.json'), JSON.stringify({ userId: '12345', authToken: 'test-session-secret', updatedAt: new Date().toISOString(), subscription: null }));
       await start();
       // Browser hardening must cover successful HTML/assets as well as errors.
       const framing = response => {

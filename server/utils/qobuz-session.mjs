@@ -1,6 +1,7 @@
 import { readFileSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { normalizeSubscription } from './qobuz-subscription.mjs';
 
 const sessionPath = (data) => join(resolve(data || process.env.DATA_DIR || 'data'), 'qobuz-session.json');
 // Retired public settings are ignored, including values left in an existing .env.
@@ -20,7 +21,8 @@ export function saveQobuzSession(session, data) {
   const temp = `${file}.${randomUUID()}.tmp`;
   try {
     writeFileSync(temp, JSON.stringify({ userId: session.userId, authToken: session.authToken,
-      updatedAt: session.updatedAt || new Date().toISOString(), needsLogin: !!session.needsLogin }), { mode: 0o600, flag: 'wx' });
+      updatedAt: session.updatedAt || new Date().toISOString(), needsLogin: !!session.needsLogin,
+      subscription: normalizeSubscription(session.subscription) }), { mode: 0o600, flag: 'wx' });
     renameSync(temp, file);
   } finally { rmSync(temp, { force: true }); }
 }

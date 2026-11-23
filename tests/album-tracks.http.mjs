@@ -52,7 +52,7 @@ test('album tracks HTTP: owner-only manifest and retries, separate ZIP, persiste
     await mkdir(data);
     await writeFile(join(root, 'orpheus.py'), '# fixture');
     await writeFile(join(root, 'modules/qobuz/interface.py'), '# fixture');
-    await writeFile(join(data, 'qobuz-session.json'), JSON.stringify({ userId: '123', authToken: 'fixture-token', updatedAt: new Date().toISOString() }));
+    await writeFile(join(data, 'qobuz-session.json'), JSON.stringify({ userId: '123', authToken: 'fixture-token', updatedAt: new Date().toISOString(), subscription: null }));
     await writeFile(python, `#!${actualPython}
 import json, os, sys, time
 from pathlib import Path

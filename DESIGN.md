@@ -106,3 +106,13 @@ notification permissions, automatic focus stealing and automatic toast dismissal
 Dialogs keep Close visible while scrolling, restore focus to News on close, and
 respect reduced motion. On narrow screens omit the redundant toolbar title to keep News,
 the account name and Sign out usable at 320px.
+
+
+Sidebar surfaces are slightly lighter within the existing neutral ramp: #f4f5f7
+in light mode and #20242b in dark mode. Preserve navigation contrast and the mobile
+bottom bar. Administrators see a compact subscription-period indicator beside the
+page heading; it opens Settings. The detailed Qobuz card shows the provider’s
+calendar end date, remaining Moscow calendar days, plan and known auto-renewal flag.
+Warn within seven days, keep expiry distinct from automatic renewal, and explicitly
+label unknown dates, stale data and login requirements. Never infer subscription
+expiry from a JWT or expose the service account’s subscription to ordinary users.

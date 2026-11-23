@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { QobuzSubscriptionStatus } from "#shared/qobuz-subscription";
 import { describeFormat, normalizeFormatOptions } from "#shared/audio-formats.mjs";
 type Job = {
   id: string;
@@ -29,6 +30,7 @@ type Job = {
   cleanupError?: string;
 };
 type Status = {
+  subscription?: QobuzSubscriptionStatus;
   installed: boolean;
   missing: string[];
   ready: boolean;
@@ -360,11 +362,10 @@ onBeforeUnmount(() => clearInterval(timer));
         <div class="content">
           <div class="page-heading">
             <div><h1>{{ pageTitle }}</h1><p class="page-description">{{ descriptions[tab] }}</p></div>
-            <span
-              v-if="tab === 'queue' && activeJobs.length"
-              class="heading-detail"
-              >В работе: {{ activeJobs.length }}</span
-            >
+            <div class="heading-tools">
+              <QobuzSubscription v-if="account?.role === 'admin' && status?.subscription" compact :subscription="status.subscription" @open="tab = 'settings'" />
+              <span v-if="tab === 'queue' && activeJobs.length" class="heading-detail">В работе: {{ activeJobs.length }}</span>
+            </div>
           </div>
           <Transition name="notice"
             ><div v-if="error" class="notice notice-error" role="alert">
@@ -685,6 +686,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         >
                       </div>
                       <QobuzConnection :connected="status?.oauthConnected || false" :result="qobuzResult" :needs-login="status?.sessionNeedsLogin || false" />
+                      <QobuzSubscription v-if="status?.subscription" :subscription="status.subscription" />
                       <div class="panel settings-list">
                         <div class="setting-row">
                           <span>OrpheusDL и модуль Qobuz</span

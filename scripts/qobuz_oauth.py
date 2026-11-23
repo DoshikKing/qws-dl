@@ -24,7 +24,7 @@ def prepare():
 def refresh(saved):
     bundle = Bundle()
     client = WebClient(saved['userId'], saved['authToken'], bundle.get_app_id(), list(bundle.get_secrets().values()))
-    return {'userId': saved['userId'], 'authToken': client.uat}
+    return {'userId': saved['userId'], 'authToken': client.uat, 'subscription': client.subscription}
 
 
 def exchange(context, code):
@@ -50,7 +50,7 @@ def exchange(context, code):
         raise ValueError('Invalid account')
     # Reuse the same profile/subscription/signing checks as actual downloads.
     client = WebClient(user_id, token, context['appId'], context['secrets'])
-    return {'userId': user_id, 'authToken': client.uat}
+    return {'userId': user_id, 'authToken': client.uat, 'subscription': client.subscription}
 
 
 if __name__ == '__main__':

@@ -4,6 +4,8 @@ No upstream files are modified. Credentials and discovered client parameters sta
 inside the Python worker. qobuz-dl is installed as a pinned dependency.
 """
 import os
+import re
+from datetime import date
 
 from qobuz_dl.bundle import Bundle
 from qobuz_dl.qopy import Client
@@ -15,6 +17,31 @@ from requests import RequestException
 
 class QobuzWebError(Exception):
     """An actionable error that contains no credentials or API response body."""
+
+
+def subscription_summary(profile):
+    """Keep only display metadata; never retain the billing/user response."""
+    user = profile.get('user') if isinstance(profile, dict) else None
+    user = user if isinstance(user, dict) else {}
+    subscription = user.get('subscription')
+    subscription = subscription if isinstance(subscription, dict) else {}
+    credential = user.get('credential')
+    parameters = credential.get('parameters') if isinstance(credential, dict) else None
+    parameters = parameters if isinstance(parameters, dict) else {}
+    plan = parameters.get('short_label') or subscription.get('offer')
+    if not isinstance(plan, str) or len(plan) > 80 or re.search(r'[\x00-\x1f\x7f]', plan):
+        plan = None
+    else:
+        plan = plan.strip() or None
+    end_date = subscription.get('end_date')
+    try:
+        if not isinstance(end_date, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', end_date):
+            raise ValueError()
+        end_date = date.fromisoformat(end_date).isoformat()
+    except ValueError:
+        end_date = None
+    canceled = subscription.get('is_canceled')
+    return {'plan': plan, 'endDate': end_date, 'autoRenew': not canceled if isinstance(canceled, bool) else None}
 
 
 class WebClient(Client):
@@ -33,6 +60,7 @@ class WebClient(Client):
         profile = response.json()
         if str(profile['user']['id']) != str(kwargs['email']):
             raise AuthenticationError('Session account mismatch')
+        self.subscription = subscription_summary(profile)
         return profile
 
 
