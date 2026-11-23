@@ -49,6 +49,7 @@ docker compose up -d --build
 | [OrpheusDL](https://github.com/OrfiTeam/OrpheusDL)                                               | Управление загрузками, файлы и теги          |
 | [Модуль OrpheusDL Qobuz](https://github.com/yarrm80s/orpheusdl-qobuz)                            | Интеграция медиа и метаданных Qobuz          |
 | [qobuz-dl](https://github.com/vitiko98/qobuz-dl)                                                 | Параметры веб-клиента и авторизация; GPL-3.0 |
+| [Monkey’s Audio SDK](https://github.com/sbooth/CXXMonkeysAudio) / [SoX DSD](https://github.com/mansr/sox) | Кодирование APE и DSD64; BSD-3-Clause и GPL/LGPL |
 | [Nuxt](https://nuxt.com/) / [Vue](https://vuejs.org/)                                            | Веб-интерфейс и сервер; MIT                  |
 | [Node.js](https://nodejs.org/), [Python](https://www.python.org/), [FFmpeg](https://ffmpeg.org/) | Среда выполнения и обработка медиа           |
 
@@ -82,3 +83,15 @@ docker compose up -d --build
 после проверки ZIP, при ошибке, прерывании или перезапуске во время обработки.
 Локальный оригинал пользователя не меняется. Серверу нужен HTTPS-доступ к
 `lrclib.net`; туда передаются только данные для поиска, без аудиофайла.
+
+
+## Выходные форматы
+
+Перед добавлением ссылки или результата поиска выберите «Формат файла»: исходный
+(по умолчанию), MP3 320 кбит/с, AAC/M4A 256 кбит/с, Vorbis/OGG VBR q6, Opus
+192 кбит/с, APE, ALAC/M4A, DSD64/DSF или TTA. Качество Qobuz задаётся отдельно;
+для конвертации лучше выбирать FLAC. Lossless не восстанавливает потери MP3,
+конвертация PCM в DSD не улучшает исходник. Основные теги, обложка, тексты и .lrc
+сохраняются. Конвертация выполняется перед созданием ZIP; повтор отдельного трека
+наследует формат. Готовые старые архивы не меняются. Кодировщики входят в Docker;
+без Docker нужны CMake, C++ компилятор и `npm run setup:codecs`.

@@ -82,7 +82,7 @@ time.sleep(0.5)
     };
     const alice = await register('alice');
     const bob = await register('bob');
-    const added = await request('/api/jobs', alice, 'POST', { url: 'https://open.qobuz.com/album/123', quality: 'lossless', retentionHours: 3, lyrics: true });
+    const added = await request('/api/jobs', alice, 'POST', { url: 'https://open.qobuz.com/album/123', quality: 'lossless', retentionHours: 3, lyrics: true, outputFormat: 'opus' });
     assert.equal(added.status, 200);
     const album = await added.json();
     const path = `/api/jobs/${album.id}/tracks`;
@@ -102,6 +102,7 @@ time.sleep(0.5)
     const retryJob = jobs.find(job => job.id === retry.id);
     assert.equal(retryJob.url, 'https://open.qobuz.com/track/22');
     assert.equal(retryJob.quality, 'lossless');
+    assert.equal(retryJob.outputFormat, 'opus');
     assert.equal(retryJob.retentionHours, 3);
     assert.equal(retryJob.lyrics, true);
     assert.equal(jobs.find(job => job.id === album.id).trackCount, 3);
@@ -120,6 +121,7 @@ time.sleep(0.5)
     await stop();
     await start();
     assert.equal((await (await request(path, alice)).json()).tracks.length, 3);
+    assert.equal((await (await request('/api/jobs', alice)).json()).find(job => job.id === album.id).outputFormat, 'opus');
   } finally {
     await stop();
     await rm(base, { recursive: true, force: true });

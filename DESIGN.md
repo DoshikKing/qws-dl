@@ -85,3 +85,10 @@ and expires after one week by default. Administrator settings show independent
 fieldsets for time-mode hours and counted-mode download count/maximum hours
 (1–720 hours, 30 days), with explicit Save, loading, error and confirmation states. Preserve user
 choices in open forms when global defaults change.
+
+
+Qobuz link and catalog download forms offer a labelled output-format select. Keep
+source quality separate from output format, default to original, and show fixed
+lossy profiles and DSD64 without claims of improved quality. The job retains the
+chosen format, including single-track retries. Use the existing field spacing and
+controls; no new codec settings or UI dependencies.

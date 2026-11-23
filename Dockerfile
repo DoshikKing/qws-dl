@@ -7,11 +7,24 @@ RUN --mount=type=secret,id=build_ca \
 COPY . .
 RUN npm run build
 
+FROM node:22-bookworm-slim AS audio-codecs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake git python3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY scripts/install-audio-codecs.sh scripts/ape-encoder.cpp ./scripts/
+RUN --mount=type=secret,id=build_ca \
+    if [ -f /run/secrets/build_ca ]; then \
+      cp /run/secrets/build_ca /usr/local/share/ca-certificates/build-proxy.crt; update-ca-certificates; \
+    fi \
+    && CODECS_PREFIX=/opt/audio-codecs bash scripts/install-audio-codecs.sh
+
 FROM node:22-bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-venv ffmpeg git ca-certificates tini \
+    python3 python3-venv ffmpeg git ca-certificates tini libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+COPY --from=audio-codecs /opt/audio-codecs /opt/audio-codecs
 COPY scripts ./scripts
 COPY server/utils/qobuz-session.mjs ./server/utils/qobuz-session.mjs
 COPY requirements-orpheus.lock ./
@@ -29,7 +42,8 @@ COPY --from=web --chown=node:node /app/.output ./.output
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     ORPHEUS_DIR=/opt/runtime/orpheusdl PYTHON_BIN=/opt/runtime/venv/bin/python \
-    DATA_DIR=/data DOWNLOAD_DIR=/downloads
+    DATA_DIR=/data DOWNLOAD_DIR=/downloads \
+    PATH="/opt/audio-codecs/bin:${PATH}"
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

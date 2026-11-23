@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { DownloadQueue } from '../server/utils/queue.mjs';
 import { loadDefaults, saveDefaults } from '../server/utils/app-settings.mjs';
 import { archiveExpiration } from '../server/utils/retention.mjs';
+import { validateOutputFormat, audioFormats } from '../shared/audio-formats.mjs';
 import { uploadRequest } from '../server/utils/uploads.mjs';
 
 test('defaults persist atomically, use environment fallbacks and reject unsafe/unexpected values', async () => {
@@ -102,4 +103,11 @@ test('counted archives expire without downloads, snapshot admin TTL and migrate 
     assert.equal(restored.downloadLimit, 15); assert.equal(restored.downloadRetentionHours, 168);
     assert.equal(Date.parse(restored.expiresAt) - Date.parse(restored.finishedAt), 168 * 3600_000);
   } finally { queue?.close(); await rm(base, { recursive: true, force: true }); }
+});
+
+test('output formats have a fixed allowlist and original is the backwards-compatible default', () => {
+  assert.equal(validateOutputFormat(), 'original');
+  for (const format of Object.keys(audioFormats)) assert.equal(validateOutputFormat(format), format);
+  for (const value of ['__proto__', 'constructor', 'mp3;touch /tmp/not-allowed', 'flac', {}, [], 1, null])
+    assert.throws(() => validateOutputFormat(value));
 });

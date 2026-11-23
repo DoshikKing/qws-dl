@@ -13,6 +13,9 @@ import unicodedata
 
 import mutagen
 from mutagen.flac import FLAC
+from mutagen.monkeysaudio import MonkeysAudio
+from mutagen.trueaudio import TrueAudio
+from mutagen.dsf import DSF
 from mutagen.id3 import ID3, SYLT, USLT
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
@@ -150,7 +153,7 @@ def metadata(audio):
 def tag_audio(audio, lyrics):
     if audio.tags is None:
         audio.add_tags()
-    if isinstance(audio, MP3):
+    if isinstance(audio.tags, ID3):
         audio.tags.delall('USLT')
         audio.tags.delall('SYLT')
         if lyrics['plain']:
@@ -176,12 +179,12 @@ def enrich_downloads(directory, cache_path=''):
         directories[:] = [name for name in directories if not name.startswith('.qws-') and not Path(folder, name).is_symlink()]
         for name in files:
             path = Path(folder, name)
-            if name.startswith('.qws-') or path.is_symlink() or path.suffix.lower() not in {'.flac', '.mp3', '.m4a', '.ogg', '.opus'}:
+            if name.startswith('.qws-') or path.is_symlink() or path.suffix.lower() not in {'.flac', '.mp3', '.m4a', '.ogg', '.opus', '.ape', '.tta', '.dsf'}:
                 continue
             temporary = None
             try:
                 audio = read_audio_tags(path)
-                if not isinstance(audio, (FLAC, MP3, MP4, OggVorbis, OggOpus)):
+                if not isinstance(audio, (FLAC, MP3, MP4, OggVorbis, OggOpus, MonkeysAudio, TrueAudio, DSF)):
                     continue
                 artist, title, album = metadata(audio)
                 duration = audio.info.length

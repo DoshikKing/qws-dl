@@ -3,7 +3,7 @@
 [Русская версия](README.ru.md) · [Setup and configuration](INFO.md)
 
 A Nuxt web interface for OrpheusDL and its Qobuz module. Search Qobuz tracks, albums and artists with cover art, or queue media links,
-choose audio quality, view logs, cancel jobs, and download completed jobs as ZIP archives.
+choose source quality and output format, view logs, cancel jobs, and download completed jobs as ZIP archives.
 Accounts are invitation-only; each user has a personal invite code and an invitation limit.
 Users can manually delete their own archives from Archives, with confirmation; download history remains.
 The administrator manages accounts and can delete any download from Storage.
@@ -42,6 +42,7 @@ local development, tests, troubleshooting, and known limitations.
 | [OrpheusDL](https://github.com/OrfiTeam/OrpheusDL)                                               | Download orchestration, media files and tagging  |
 | [OrpheusDL Qobuz module](https://github.com/yarrm80s/orpheusdl-qobuz)                            | Qobuz media and metadata integration             |
 | [qobuz-dl](https://github.com/vitiko98/qobuz-dl)                                                 | Web-client discovery and authentication; GPL-3.0 |
+| [Monkey’s Audio SDK](https://github.com/sbooth/CXXMonkeysAudio) / [SoX DSD](https://github.com/mansr/sox) | APE and DSD64 encoding; BSD-3-Clause and GPL/LGPL |
 | [Nuxt](https://nuxt.com/) / [Vue](https://vuejs.org/)                                            | Web UI and server; MIT                           |
 | [Node.js](https://nodejs.org/), [Python](https://www.python.org/), [FFmpeg](https://ffmpeg.org/) | Runtime and media tools                          |
 
@@ -102,3 +103,16 @@ Raw server copies are removed after ZIP verification, on failed/interrupted
 processing or after a restart during processing. Your local original is unchanged.
 Only lookup metadata, never uploaded audio, is sent to `lrclib.net`. Allow outbound
 HTTPS to that host. The existing archive authorization and account quotas apply.
+
+
+## Output formats
+
+Before adding Qobuz links or catalog items, choose **Формат файла**: original
+(default), MP3 320 kbps, AAC/M4A 256 kbps, Vorbis/OGG VBR q6, Opus 192 kbps,
+APE, ALAC/M4A, DSD64/DSF or TTA. Source quality remains independent; prefer FLAC
+when converting. Lossless formats do not restore quality lost in MP3; PCM-to-DSD
+does not improve the source. Converted tracks retain common tags, artwork and
+lyrics, with LRC sidecars where available. Conversion happens once before ZIP
+creation; single-track retries inherit the format. Existing ZIPs stay unchanged.
+Docker builds include the additional APE/DSD encoders. Without Docker, install
+CMake and a C++ compiler, then run `npm run setup:codecs`. See [details](INFO.md#output-conversion).

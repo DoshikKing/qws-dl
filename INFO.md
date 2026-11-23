@@ -243,11 +243,12 @@ recreation, not a new build. Local dev/production processes must restart after e
 ## Local development and validation
 
 Requirements: Node.js 22.12+ or 24, Python 3.10+ with `venv`, Git and FFmpeg on `PATH`.
-Debian/Ubuntu prerequisites: `apt-get install python3 python3-venv git ffmpeg`.
+Debian/Ubuntu prerequisites: `apt-get install python3 python3-venv git ffmpeg build-essential cmake`.
 
 ```sh
 npm ci
 npm run setup:orpheus
+npm run setup:codecs
 cp .env.example .env
 # Configure .env privately.
 npm run dev
@@ -436,3 +437,45 @@ that job's folder, preserves history, records `deletedAt`/`deletedBy: "owner"`,
 and makes downloads/re-archiving return 410. Repeated deletion is safe. The
 administrator's separate `DELETE /api/admin/downloads/:id` remains admin-only
 and works across owners (`deletedBy: "admin"`). This also covers uploaded lyrics ZIPs.
+
+
+## Output conversion
+
+`POST /api/jobs` accepts optional `outputFormat`: `original` (default), `mp3`,
+`aac`, `vorbis`, `opus`, `ape`, `alac`, `dsd`, `tta`. The server uses a fixed
+allowlist and passes only this identifier to the serialized worker via
+`QWS_OUTPUT_FORMAT`. A track retry inherits the format and ordinary archive
+retention/deletion policies. This setting applies to new Qobuz downloads, including
+albums/discographies; existing ZIPs and uploaded lyrics files are not transcoded.
+
+Profiles: MP3 320 kbps/48 kHz, AAC 256 kbps/48 kHz in M4A, Vorbis q6/48 kHz in OGG,
+Opus 192 kbps/48 kHz, APE normal compression, ALAC in M4A, TTA and DSD64 in DSF
+(2.8224 MHz, -6 dB headroom). Only mono/stereo is supported. APE/ALAC accept lossless
+PCM up to 24 bits; unsupported conversion fails explicitly. PCM lossless profiles
+keep the source sample rate and supported bit depth. Already matching codecs are
+kept without another lossy encode; the original bitrate is retained in that case.
+DSD64 is a conversion from PCM, not a native DSD master or an improvement in quality.
+
+Conversion runs before optional LRCLIB enrichment. Common music tags, track/disc
+numbers, dates, front artwork, plain lyrics and ID3 synchronized lyrics are
+translated across containers. AAC/ALAC use the normal M4A lyric tag; synchronized
+lyrics also remain in a same-stem LRC when available. APE uses APEv2, TTA/DSF use ID3.
+Each output is written privately, probed for codec/duration, tagged and only then
+replaces its source. Failed files keep their originals and the job is marked
+failed, so a partially converted archive can contain originals; the log names
+failures. No shell commands or user-controlled codec flags/URLs are accepted.
+Encoders inherit the cancellable worker process group, receive no Qobuz token,
+use a per-track 10-minute deadline, and enforce job/disk quotas during conversion.
+The normal overall job deadline still applies. A missing encoder is detected
+before Qobuz download. Rebuild the Docker image to install the additional encoders.
+
+The image builds two pinned source distributions: [Monkey’s Audio SDK mirror](https://github.com/sbooth/CXXMonkeysAudio/tree/a33138a7bff0ef65dfa67f2a25463e201d7dff64)
+(BSD-3-Clause, Matthew T. Ashland; narrow `scripts/ape-encoder.cpp` CLI adapter) and
+[Måns Rullgard’s SoX DSD fork](https://github.com/mansr/sox/tree/0be259eaa9ce3f3fa587a3ef0cf2c0b9c73167a2)
+(GPL-2.0-or-later CLI, LGPL-2.1-or-later library). This older SoX fork receives
+only locally generated raw PCM, never downloaded/uploaded containers or URLs.
+`scripts/install-audio-codecs.sh` mirrors its DSD sources in the old CMake lists
+and fixes compiler-version detection. Corresponding sources with build adjustments
+and license texts ship in `/opt/audio-codecs/share/{source,licenses}`. No source is
+downloaded at application startup. For local installs, run `npm run setup:codecs`
+with CMake 3.x and a C++ compiler; tools live in `.runtime/audio-codecs/bin`.

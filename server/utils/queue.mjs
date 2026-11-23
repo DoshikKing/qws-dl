@@ -18,6 +18,8 @@ import { qobuzEnvironment, workerEnvironment, readQobuzSession, retiredQobuzVari
 import { takeLimit } from "./rate-limit.mjs";
 import { folderBytes, requireSpace } from "./storage.mjs";
 
+import { validateOutputFormat } from "../../shared/audio-formats.mjs";
+
 export const qualities = ["hifi", "lossless", "high"];
 export function normalizeUrl(value) {
   if (typeof value !== "string" || value.length > 2048)
@@ -207,11 +209,12 @@ export class DownloadQueue {
     userId = null,
     lyrics = false,
     retention = {},
+    outputFormat = 'original',
   ) {
     if (typeof lyrics !== "boolean") throw new Error("Параметр текстов должен быть логическим значением.");
     url = normalizeUrl(url);
     if (!qualities.includes(quality)) throw new Error("Неизвестное качество.");
-    return this.enqueue({ url, quality, ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit, 24, loadDefaults(this.settings).downloadRetentionHours), userId, lyrics });
+    return this.enqueue({ url, quality, ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit, 24, loadDefaults(this.settings).downloadRetentionHours), userId, lyrics, outputFormat });
   }
 
   addUpload(filename, retentionHours, userId, metadata = {}, retention = {}) {
@@ -221,8 +224,9 @@ export class DownloadQueue {
       kind: "lyrics-upload", filename, title: filename, metadata, status: "uploading" });
   }
 
-  enqueue({ url, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, parentJobId, parentTrackId, retentionMode = "time", downloadLimit = 1, downloadRetentionHours = 168, status = "queued" }) {
+  enqueue({ url, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, parentJobId, parentTrackId, retentionMode = "time", downloadLimit = 1, downloadRetentionHours = 168, outputFormat = "original", status = "queued" }) {
     retentionPolicy(retentionMode, retentionHours, downloadLimit, kind === "lyrics-upload" ? 5 : 24, downloadRetentionHours);
+    validateOutputFormat(outputFormat);
     const own = this.jobs.filter((job) => job.userId === userId && !this.expired(job));
     const pending = (job) => ["queued", "uploading", "running", "archiving"].includes(job.status);
     if (userId && (own.filter(pending).length >= (this.settings.maxUserJobs ?? 10) || own.length >= 200))
@@ -244,7 +248,7 @@ export class DownloadQueue {
       id: randomUUID(),
       userId,
       url,
-      quality,
+      quality, outputFormat,
       lyrics,
       kind, filename, title, metadata, parentJobId, parentTrackId,
       status,
@@ -376,6 +380,7 @@ export class DownloadQueue {
         detached: true,
         stdio: ["ignore", "pipe", "pipe"],
         env: { ...environment, DOWNLOAD_DIR: folder, PYTHONUNBUFFERED: "1",
+          QWS_OUTPUT_FORMAT: job.outputFormat || "original",
           QWS_LYRICS: job.lyrics === true ? "1" : "0",
           QWS_LYRICS_CACHE: join(this.settings.data, "lyrics.sqlite3"),
           MAX_JOB_BYTES: String(byteLimit),
@@ -444,7 +449,7 @@ export class DownloadQueue {
               .findLast((line) => line.startsWith("Qobuz: ")) ||
             "Не удалось войти в Qobuz. Подробности в журнале.";
         if (job.status === "failed" && !job.error)
-          job.error = upload ? ({
+          job.error = code === 9 ? "Не удалось конвертировать аудио. Подробности в журнале; исходные файлы сохранены." : upload ? ({
             4: "Текст для этой версии записи не найден.",
             5: "Нет исполнителя или названия в тегах. Укажите их в форме и загрузите файл снова.",
             6: "Файл повреждён или формат аудио не поддерживается.",
@@ -595,7 +600,7 @@ export class DownloadQueue {
     const pending = this.jobs.find((item) => item.parentJobId === job.id && item.parentTrackId === trackId &&
       ['queued', 'running', 'archiving'].includes(item.status));
     if (pending) return pending;
-    return this.enqueue({ url: `https://open.qobuz.com/track/${track.id}`, quality: job.quality,
+    return this.enqueue({ url: `https://open.qobuz.com/track/${track.id}`, quality: job.quality, outputFormat: job.outputFormat || "original",
       retentionHours: job.retentionHours, retentionMode: job.retentionMode, downloadLimit: job.downloadLimit, downloadRetentionHours: job.downloadRetentionHours, lyrics: job.lyrics === true, userId: user.id,
       title: track.artist ? `${track.artist} - ${track.title}` : track.title,
       parentJobId: job.id, parentTrackId: track.id });

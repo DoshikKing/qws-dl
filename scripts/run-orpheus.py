@@ -7,6 +7,7 @@ import runpy
 import sys
 
 from qobuz_web import QobuzWebError
+from convert_audio import ConversionError, ensure_encoder, convert_downloads
 from media_title import install_title_reporter
 from worker_safety import install_network_safety, install_download_safety
 
@@ -15,6 +16,8 @@ def main():
     if len(sys.argv) != 4 or sys.argv[3] not in {'hifi', 'lossless', 'high'}:
         raise ValueError('Expected: run-orpheus.py ORPHEUS_DIR QOBUZ_URL QUALITY')
     root, url, quality = Path(sys.argv[1]).resolve(), sys.argv[2], sys.argv[3]
+    output_format = os.environ.get('QWS_OUTPUT_FORMAT', 'original')
+    ensure_encoder(output_format)
     install_network_safety()
     os.chdir(root)
     sys.path.insert(0, str(root))
@@ -75,6 +78,7 @@ def main():
     sys.stdout = output
     sys.argv = ['orpheus.py', '-o', os.environ['DOWNLOAD_DIR'], url]
     runpy.run_path(str(root / 'orpheus.py'), run_name='__main__')
+    convert_downloads(os.environ['DOWNLOAD_DIR'], output_format)
     if os.environ.get('QWS_LYRICS') == '1':
         try:
             from lyrics import enrich_downloads
@@ -89,6 +93,9 @@ def main():
 if __name__ == '__main__':
     try:
         main()
+    except ConversionError as error:
+        print(f'Конвертация: {error}', file=sys.stderr, flush=True)
+        raise SystemExit(9)
     except QobuzWebError as error:
         print(f'Qobuz: {error}', file=sys.stderr, flush=True)
         raise SystemExit(3)

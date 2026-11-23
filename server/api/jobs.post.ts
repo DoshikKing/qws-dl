@@ -21,6 +21,7 @@ export default defineEventHandler(async (event) => {
       user.id,
       body?.lyrics ?? defaults.lyrics,
       { retentionMode: body?.retentionMode ?? defaults.retentionMode, downloadLimit: body?.downloadLimit ?? defaults.downloadLimit },
+      body?.outputFormat ?? "original",
     );
   } catch (error) {
     throw createError({
