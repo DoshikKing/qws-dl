@@ -15,7 +15,7 @@ const downloads = defineModel<number>('downloads', { required: true });
       <select :id="`${prefix}-hours`" v-model.number="hours" :disabled="disabled"><option v-for="n in maxHours || 24" :key="n" :value="n">{{ n }} ч</option></select>
     </div>
     <div v-else class="field"><label :for="`${prefix}-downloads`">Число скачиваний</label>
-      <input :id="`${prefix}-downloads`" v-model.number="downloads" type="number" min="1" max="100" step="1" required :disabled="disabled" />
+      <input :id="`${prefix}-downloads`" v-model.number="downloads" type="number" min="1" max="15" step="1" required :disabled="disabled" />
     </div>
   </div>
 </template>

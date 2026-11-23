@@ -20,6 +20,7 @@ type Results = Partial<Record<SearchType, CatalogItem[]>> & {
 };
 const props = defineProps<{
   disabled: boolean;
+  downloadRetentionHours?: number;
   qualities: Record<string, string>;
 }>();
 const quality = defineModel<string>("quality", { required: true });
@@ -339,7 +340,7 @@ async function addSelected() {
             <span>Добавлять тексты песен<span class="field-note">Синхронизированный текст и файл .lrc, если найдены.</span></span>
           </label>
           <p class="field-note">
-            {{ activeType === 'tracks' ? 'Каждый трек' : activeType === 'albums' ? 'Каждый альбом' : 'Каждая дискография' }} — отдельное задание и ZIP. {{ retentionMode === 'downloads' ? `Архив хранится до ${downloadLimit} скачиваний.` : `Архив хранится ${retention} ч после завершения.` }}
+            {{ activeType === 'tracks' ? 'Каждый трек' : activeType === 'albums' ? 'Каждый альбом' : 'Каждая дискография' }} — отдельное задание и ZIP. {{ retentionMode === 'downloads' ? `ZIP удалится после ${downloadLimit} скачиваний или через ${props.downloadRetentionHours || 168} ч — что наступит раньше.` : `Архив хранится ${retention} ч после завершения.` }}
           </p>
         </div>
       </template>

@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
         code === "expired"
           ? job.deletedAt
             ? "Архив удалён администратором."
-            : job.retentionMode === "downloads" ? "Лимит скачиваний исчерпан." : "Срок хранения истёк."
+            : job.retentionMode === "downloads" && job.downloadCount >= job.downloadLimit ? "Лимит скачиваний исчерпан." : "Срок хранения истёк."
           : code === "running"
             ? "Дождитесь завершения загрузки."
             : code === "empty"

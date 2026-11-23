@@ -77,6 +77,8 @@ Damir Sokolovsky / @heydamir (CC BY 4.0).
 
 Archive retention offers two labelled choices: time or completed download count.
 Show the applicable value next to the mode and the remaining count beside a counted
-archive; never display a fictional expiry date. Administrator defaults use the same
-controls with explicit Save, loading, error and confirmation states. Preserve user
+archive, together with its expiry date. Counted mode allows 1–15 completed downloads
+and expires after one week by default. Administrator settings show independent
+fieldsets for time-mode hours and counted-mode download count/maximum hours
+(1–720 hours, 30 days), with explicit Save, loading, error and confirmation states. Preserve user
 choices in open forms when global defaults change.

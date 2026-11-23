@@ -3,19 +3,22 @@ import { join } from 'node:path';
 import { retentionPolicy } from './retention.mjs';
 
 export function validateDefaults(value) {
-  const fields = ['quality', 'retentionMode', 'retentionHours', 'downloadLimit', 'lyrics'];
+  const fields = ['quality', 'retentionMode', 'retentionHours', 'downloadLimit', 'downloadRetentionHours', 'lyrics'];
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !fields.includes(key)) || fields.some(key => !Object.hasOwn(value, key)))
     throw new Error('Некорректные настройки приложения.');
   if (!['hifi', 'lossless', 'high'].includes(value.quality)) throw new Error('Неизвестное качество.');
   if (typeof value.lyrics !== 'boolean') throw new Error('Параметр текстов должен быть логическим значением.');
-  return { quality: value.quality, ...retentionPolicy(value.retentionMode, value.retentionHours, value.downloadLimit), lyrics: value.lyrics };
+  return { quality: value.quality, ...retentionPolicy(value.retentionMode, value.retentionHours, value.downloadLimit, 24, value.downloadRetentionHours), lyrics: value.lyrics };
 }
 
 export function loadDefaults(settings) {
   const file = join(settings.data, 'app-settings.json');
   if (!existsSync(file)) return { quality: settings.quality || 'hifi', retentionMode: 'time',
-    retentionHours: settings.retentionHours || 24, downloadLimit: 1, lyrics: false };
-  try { return validateDefaults(JSON.parse(readFileSync(file, 'utf8'))); }
+    retentionHours: settings.retentionHours || 24, downloadLimit: 1, downloadRetentionHours: 168, lyrics: false };
+  try {
+    const saved = JSON.parse(readFileSync(file, 'utf8'));
+    return validateDefaults({ downloadRetentionHours: 168, ...saved, downloadLimit: Math.min(saved.downloadLimit, 15) });
+  }
   catch { throw new Error('Не удалось прочитать настройки приложения. Сохраните их заново.'); }
 }
 

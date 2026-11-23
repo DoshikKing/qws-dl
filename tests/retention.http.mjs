@@ -46,7 +46,7 @@ with Path(os.environ['DOWNLOAD_DIR'], 'fixture.flac').open('wb') as out:
     const alice = await register('alice'), bob = await register('bob');
     assert.equal((await request('/api/admin/settings')).status, 401);
     assert.equal((await request('/api/admin/settings', alice)).status, 403);
-    const defaults = { quality: 'lossless', retentionMode: 'downloads', retentionHours: 3, downloadLimit: 2, lyrics: true };
+    const defaults = { quality: 'lossless', retentionMode: 'downloads', retentionHours: 3, downloadLimit: 2, downloadRetentionHours: 1, lyrics: true };
     assert.equal((await request('/api/admin/settings', bob, 'PUT', defaults)).status, 403);
     assert.equal((await request('/api/admin/settings', admin, 'PUT', { ...defaults, downloadLimit: 0 })).status, 400);
     assert.equal((await request('/api/admin/settings', admin, 'PUT', { ...defaults, data: '/tmp' })).status, 400);
@@ -68,7 +68,7 @@ with Path(os.environ['DOWNLOAD_DIR'], 'fixture.flac').open('wb') as out:
     await stop();await start();
     assert.deepEqual(await (await request('/api/admin/settings', admin)).json(), defaults);
     assert.equal((await jobs()).find(item => item.id === job.id).downloadCount, 1);
-    assert.equal((await jobs()).find(item => item.id === job.id).expiresAt, null);
+    assert.equal(Date.parse((await jobs()).find(item => item.id === job.id).expiresAt) - Date.parse((await jobs()).find(item => item.id === job.id).finishedAt), 3600_000);
     const last = await request(path, alice, 'GET', undefined, { Range: 'bytes=0-9' });assert.equal(last.status, 200);assert.ok((await last.arrayBuffer()).byteLength > 1024);
     await until(async () => !!(await jobs()).find(item => item.id === job.id).expiredAt);
     assert.equal((await request(path, alice)).status, 410);
@@ -83,6 +83,18 @@ with Path(os.environ['DOWNLOAD_DIR'], 'fixture.flac').open('wb') as out:
     assert.equal((await jobs()).find(item => item.id === big.id).downloadCount, 0);
     const completed = await request(bigPath, alice);assert.equal(completed.status, 200);assert.ok((await completed.arrayBuffer()).byteLength > 32 * 1024 ** 2);
     await until(async () => !!(await jobs()).find(item => item.id === big.id).expiredAt);
+    const timed = await add('125', { downloadRetentionHours: 720 });
+    assert.equal(timed.downloadRetentionHours, 1);
+    await until(async () => !!(await jobs()).find(item => item.id === timed.id)?.hasFiles);
+    await stop();
+    const history = JSON.parse(await readFile(join(data, 'jobs.json'), 'utf8'));
+    history.find(item => item.id === timed.id).expiresAt = new Date(Date.now() - 1000).toISOString();
+    await writeFile(join(data, 'jobs.json'), JSON.stringify(history)); await start();
+    assert.equal((await request(`/api/jobs/${timed.id}/archive`, alice)).status, 410);
+    assert.equal((await jobs()).find(item => item.id === timed.id).downloadCount, 0);
+    await assert.rejects(readFile(join(base, 'downloads', timed.id, '.qws-archive.zip')), { code: 'ENOENT' });
+    assert.equal((await request('/api/jobs', alice, 'POST', {url:'https://open.qobuz.com/track/126',downloadLimit:16})).status, 400);
+    assert.equal((await request('/api/admin/settings', admin, 'PUT', {...defaults, downloadRetentionHours:721})).status, 400);
     const timeJob = await add('124', { retentionMode: 'time', retentionHours: 2, lyrics: false });
     await until(async () => !!(await jobs()).find(item => item.id === timeJob.id)?.hasFiles);
     assert.ok((await jobs()).find(item => item.id === timeJob.id).expiresAt);

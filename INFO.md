@@ -172,7 +172,7 @@ and ownership checks apply to both the manifest and the retry endpoint.
 
 ## ZIP downloads and automatic expiry
 
-Choose **1–24 hours** or **1–100 completed downloads** when adding a download. `DOWNLOAD_RETENTION_HOURS` supplies the default.
+Choose **1–24 hours** or **1–15 completed downloads** when adding a download. `DOWNLOAD_RETENTION_HOURS` supplies the default.
 For time retention, the clock starts when the job finishes, including failed/cancelled jobs with partial files.
 Each job uses a separate UUID directory. Its expiry time appears in the queue.
 Use the **ZIP** link in the queue or the archive card in the library to download the whole job.
@@ -391,20 +391,27 @@ if you want the same protection there.
 ## Saved application defaults and counted retention
 
 Administrators edit **Настройки → Настройки по умолчанию**: quality, retention mode,
-hours, download limit and optional lyrics. The validated settings are written
+separate time-mode hours and download-mode count/maximum hours, and optional lyrics. The validated settings are written
 atomically to `DATA_DIR/app-settings.json` (0600) and survive container recreation
 with the existing data volume. With no saved file, quality and hours fall back to
 `DOWNLOAD_QUALITY` and `DOWNLOAD_RETENTION_HOURS`; mode is time, limit is 1 and lyrics
-are off. `GET`/`PUT /api/admin/settings` require an active administrator session;
+are off. Counted archive TTL defaults to 168 hours. `GET`/`PUT /api/admin/settings` require an active administrator session;
 permissions are checked again after reading a PUT body. `/api/status` exposes only
 these public defaults alongside readiness, never secrets. Already created jobs are
 unchanged. Untouched open forms adopt updated defaults during polling; explicit
 user choices remain until changed. Saving as administrator also updates their
 next-download form. For uploaded lyrics files the time default is capped at 5 hours.
 
-A job may use `retentionMode: "downloads"` and `downloadLimit: 1..100` instead of
-`"time"`. Its `expiresAt` is null; it remains until the counter is exhausted or an
-administrator deletes it. Ordinary storage/job quotas still apply. The counter is
+A job may use `retentionMode: "downloads"` and `downloadLimit: 1..15` instead of
+`"time"`. It also has a finite `expiresAt`: `downloadRetentionHours` defaults to 168
+(one week) and is configurable by the administrator from 1 to 720 hours (30 days).
+Both modes have independent storage settings in the admin editor. Time-mode hours
+remain 1–24 (1–5 for uploaded lyrics). Counted archives are deleted when the count
+or time limit is reached, whichever happens first, or on administrator deletion.
+The counted TTL is snapshotted on creation and cannot be overridden by a job body
+or upload header. Older counted archives receive the saved TTL on upgrade,
+measured from their original completion date; old limits above 15 are capped at 15.
+Changing saved defaults only affects new jobs. Ordinary storage/job quotas still apply. The counter is
 persisted per job, and individual track retries inherit the policy with a new zero
 counter. Empty failed/cancelled jobs still receive cleanup timestamps.
 

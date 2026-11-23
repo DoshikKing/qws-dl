@@ -12,6 +12,7 @@ type Job = {
   retentionHours: number;
   retentionMode?: string;
   downloadLimit?: number;
+  downloadRetentionHours?: number;
   downloadCount?: number;
   lyrics?: boolean;
   expiresAt?: string | null;
@@ -31,6 +32,7 @@ type Status = {
   retentionHours: number;
   retentionMode?: string;
   downloadLimit?: number;
+  downloadRetentionHours?: number;
   downloadCount?: number;
   lyrics?: boolean;
   oauthConnected: boolean;
@@ -108,7 +110,7 @@ const availableArchives = computed(() =>
       !["running", "queued", "archiving"].includes(job.status) &&
       !job.expiredAt &&
       !job.deletedAt &&
-      (job.retentionMode === 'downloads' ? (job.downloadCount || 0) < (job.downloadLimit || 1) : job.expiresAt && Date.parse(job.expiresAt) > Date.now()),
+      (job.retentionMode !== 'downloads' || (job.downloadCount || 0) < (job.downloadLimit || 1)) && job.expiresAt && Date.parse(job.expiresAt) > Date.now(),
   ),
 );
 const mediaTypes: Record<string, string> = {
@@ -468,10 +470,10 @@ onBeforeUnmount(() => clearInterval(timer));
                         <span>Добавлять тексты песен<span class="field-note">Синхронизированный текст и файл .lrc, если найдены.</span></span>
                       </label>
                       <p class="field-note">
-                        {{ retentionMode === 'downloads' ? `ZIP хранится без ограничения по времени и удалится после ${downloadLimit} скачиваний.` : `ZIP удалится через ${retentionHours} ч после завершения.` }}
+                        {{ retentionMode === 'downloads' ? `ZIP удалится после ${downloadLimit} скачиваний или через ${status?.downloadRetentionHours || 168} ч — что наступит раньше.` : `ZIP удалится через ${retentionHours} ч после завершения.` }}
                       </p>
                     </form>
-                    <QobuzSearch
+                    <QobuzSearch :download-retention-hours="status?.downloadRetentionHours || 168"
                       v-else
                       v-model:lyrics="lyrics"
                       v-model:quality="quality"
@@ -641,7 +643,7 @@ onBeforeUnmount(() => clearInterval(timer));
                 <LyricsUpload
                   v-else-if="tab === 'lyrics'"
                   :jobs="jobs.filter(job => job.kind === 'lyrics-upload')"
-                  :default-mode="status?.retentionMode || 'time'" :default-downloads="status?.downloadLimit || 1" :default-hours="Math.min(status?.retentionHours || 1, 5)"
+                  :download-retention-hours="status?.downloadRetentionHours || 168" :default-mode="status?.retentionMode || 'time'" :default-downloads="status?.downloadLimit || 1" :default-hours="Math.min(status?.retentionHours || 1, 5)"
                   @changed="refresh"
                 />
                 <ArchiveLibrary

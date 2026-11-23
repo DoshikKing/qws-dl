@@ -6,7 +6,7 @@ A Nuxt web interface for OrpheusDL and its Qobuz module. Search Qobuz tracks, al
 choose audio quality, view logs, cancel jobs, and download completed jobs as ZIP archives.
 Accounts are invitation-only; each user has a personal invite code and an invitation limit.
 The administrator manages accounts and can delete downloads from Storage.
-Choose **1–24 hours** or **1–100 completed downloads** per job; archives are removed when that limit is reached. Administrators can save application defaults in Settings. Source files are removed after ZIP verification.
+Choose **1–24 hours** or **1–15 completed downloads** per job; counted archives also expire after one week by default (admin configurable from 1 hour to 30 days). Archives are removed when either limit is reached. Administrators can save application defaults in Settings. Source files are removed after ZIP verification.
 
 ## Disclaimer
 
@@ -96,7 +96,7 @@ without a Qobuz session. Tags supply artist, title and album; optional form fiel
 override the lookup metadata. A matching LRCLIB result is embedded, and the ZIP
 contains the audio plus an identically named UTF-8 `.lrc`. Plain lyrics have no
 invented timestamps and are identified as unsynchronized. Missing matches or invalid
-audio produce an explicit error. Choose **1–5 hours** after completion or deletion after **1–100 completed downloads**.
+audio produce an explicit error. Choose **1–5 hours** after completion or deletion after **1–15 completed downloads**, also subject to the admin-configured counted archive TTL.
 Raw server copies are removed after ZIP verification, on failed/interrupted
 processing or after a restart during processing. Your local original is unchanged.
 Only lookup metadata, never uploaded audio, is sent to `lrclib.net`. Allow outbound

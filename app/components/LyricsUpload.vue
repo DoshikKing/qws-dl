@@ -5,7 +5,7 @@ type UploadJob = {
   archiveError?: string | null;
   log: string; hasFiles: boolean; expiresAt?: string | null; expiredAt?: string | null; deletedAt?: string | null;
 };
-const props = defineProps<{ jobs: UploadJob[]; defaultMode?: string; defaultDownloads?: number; defaultHours?: number }>();
+const props = defineProps<{ jobs: UploadJob[]; defaultMode?: string; defaultDownloads?: number; defaultHours?: number; downloadRetentionHours?: number }>();
 const emit = defineEmits<{ changed: [] }>();
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/?$/, "/");
 const api = $fetch.create({ baseURL });
@@ -71,7 +71,7 @@ async function upload() {
   }
 }
 const available = (job: UploadJob) => job.hasFiles && !job.expiredAt && !job.deletedAt &&
-  (job.retentionMode === 'downloads' ? (job.downloadCount || 0) < (job.downloadLimit || 1) : !!job.expiresAt && Date.parse(job.expiresAt) > Date.now());
+  (job.retentionMode !== 'downloads' || (job.downloadCount || 0) < (job.downloadLimit || 1)) && !!job.expiresAt && Date.parse(job.expiresAt) > Date.now();
 const expires = (value: string) => new Date(value).toLocaleString("ru-RU");
 </script>
 <template>
@@ -99,7 +99,7 @@ const expires = (value: string) => new Date(value).toLocaleString("ru-RU");
           {{ busy ? "Загрузка файла…" : "Найти и добавить текст" }}
         </button>
       </div>
-      <p class="field-note">После обработки оригинал на сервере удаляется. {{ retentionMode === 'downloads' ? `ZIP хранится до ${downloadLimit} скачиваний.` : `ZIP удалится через ${retention} ч после завершения.` }}</p>
+      <p class="field-note">После обработки оригинал на сервере удаляется. {{ retentionMode === 'downloads' ? `ZIP удалится после ${downloadLimit} скачиваний или через ${props.downloadRetentionHours || 168} ч — что наступит раньше.` : `ZIP удалится через ${retention} ч после завершения.` }}</p>
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
       <p v-if="notice" class="form-success" role="status">{{ notice }}</p>
     </form>

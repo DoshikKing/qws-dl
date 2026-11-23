@@ -148,7 +148,8 @@ export class DownloadQueue {
         if (job.kind === "lyrics-upload") rmSync(this.folder(job), { recursive: true, force: true });
       }
       job.retentionMode ||= 'time';
-      job.downloadLimit ||= 1;
+      job.downloadLimit = Math.min(15, job.downloadLimit || 1);
+      job.downloadRetentionHours ??= loadDefaults(settings).downloadRetentionHours;
       job.downloadCount ||= 0;
       this.readTrackMetadata(job);
       job.title ||= this.readTitle(job);
@@ -210,18 +211,18 @@ export class DownloadQueue {
     if (typeof lyrics !== "boolean") throw new Error("Параметр текстов должен быть логическим значением.");
     url = normalizeUrl(url);
     if (!qualities.includes(quality)) throw new Error("Неизвестное качество.");
-    return this.enqueue({ url, quality, ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit), userId, lyrics });
+    return this.enqueue({ url, quality, ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit, 24, loadDefaults(this.settings).downloadRetentionHours), userId, lyrics });
   }
 
   addUpload(filename, retentionHours, userId, metadata = {}, retention = {}) {
     if (!Number.isInteger(retentionHours) || retentionHours < 1 || retentionHours > 5)
       throw new Error("Срок хранения: целое число от 1 до 5 часов.");
-    return this.enqueue({ url: "", quality: "", ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit, 5), userId, lyrics: true,
+    return this.enqueue({ url: "", quality: "", ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit, 5, loadDefaults(this.settings).downloadRetentionHours), userId, lyrics: true,
       kind: "lyrics-upload", filename, title: filename, metadata, status: "uploading" });
   }
 
-  enqueue({ url, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, parentJobId, parentTrackId, retentionMode = "time", downloadLimit = 1, status = "queued" }) {
-    retentionPolicy(retentionMode, retentionHours, downloadLimit);
+  enqueue({ url, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, parentJobId, parentTrackId, retentionMode = "time", downloadLimit = 1, downloadRetentionHours = 168, status = "queued" }) {
+    retentionPolicy(retentionMode, retentionHours, downloadLimit, kind === "lyrics-upload" ? 5 : 24, downloadRetentionHours);
     const own = this.jobs.filter((job) => job.userId === userId && !this.expired(job));
     const pending = (job) => ["queued", "uploading", "running", "archiving"].includes(job.status);
     if (userId && (own.filter(pending).length >= (this.settings.maxUserJobs ?? 10) || own.length >= 200))
@@ -250,7 +251,7 @@ export class DownloadQueue {
       createdAt: new Date().toISOString(),
       log: "",
       error: null,
-      retentionHours, retentionMode, downloadLimit, downloadCount: 0,
+      retentionHours, retentionMode, downloadLimit, downloadRetentionHours, downloadCount: 0,
       expiresAt: null,
       expiredAt: null,
       hasFiles: false,
@@ -593,7 +594,7 @@ export class DownloadQueue {
       ['queued', 'running', 'archiving'].includes(item.status));
     if (pending) return pending;
     return this.enqueue({ url: `https://open.qobuz.com/track/${track.id}`, quality: job.quality,
-      retentionHours: job.retentionHours, retentionMode: job.retentionMode, downloadLimit: job.downloadLimit, lyrics: job.lyrics === true, userId: user.id,
+      retentionHours: job.retentionHours, retentionMode: job.retentionMode, downloadLimit: job.downloadLimit, downloadRetentionHours: job.downloadRetentionHours, lyrics: job.lyrics === true, userId: user.id,
       title: track.artist ? `${track.artist} - ${track.title}` : track.title,
       parentJobId: job.id, parentTrackId: track.id });
   }
