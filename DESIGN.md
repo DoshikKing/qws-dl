@@ -96,3 +96,13 @@ disclosure named «Настройки формата», collapsed initially and 
 Show only supported controls, preserve each format’s choices between link/search
 forms, disable edits during submission, and offer an explicit reset for the active
 format. Hidden fields must stay out of keyboard navigation; support 320px screens.
+
+
+Release news uses a labelled «Новости» toolbar button and a non-blocking in-app
+notification above mobile navigation. The notification opens an accessible native
+dialog with dated, factual release notes. Closing either surface acknowledges
+that release per account; the toolbar button always reopens the notes. Avoid OS
+notification permissions, automatic focus stealing and automatic toast dismissal.
+Dialogs keep Close visible while scrolling, restore focus to News on close, and
+respect reduced motion. On narrow screens omit the redundant toolbar title to keep News,
+the account name and Sign out usable at 320px.

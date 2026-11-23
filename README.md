@@ -118,3 +118,11 @@ lyrics, with LRC sidecars where available. Conversion happens once before ZIP
 creation; single-track retries inherit the format. Existing ZIPs stay unchanged.
 Docker builds include the additional APE/DSD encoders. Without Docker, install
 CMake and a C++ compiler, then run `npm run setup:codecs`. See [details](INFO.md#output-conversion).
+
+
+## Update news
+
+After signing in, a new release shows an in-app notification once. Click it for
+detailed notes, or open **Новости** in the toolbar at any time. Closing the
+notification or reader dismisses that release for your account across logins and
+devices. A new release can notify again. No browser notification permission is required.

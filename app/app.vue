@@ -350,6 +350,7 @@ onBeforeUnmount(() => clearInterval(timer));
       <main id="main-content" class="main-content" tabindex="-1">
         <header class="toolbar">
           <span class="toolbar-title"><AppIcon name="music" />Музыкальная библиотека</span>
+          <ReleaseNews v-if="account" :key="account.id" :user-id="account.id" />
           <span class="account-avatar" aria-hidden="true">{{ account?.username.slice(0, 1).toUpperCase() }}</span>
           <span class="toolbar-service">{{ account?.username }}<small>{{ account?.role === 'admin' ? 'Администратор' : 'Пользователь' }}</small></span
           ><button type="button" class="toolbar-button" @click="logout">

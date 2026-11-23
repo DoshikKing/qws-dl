@@ -508,3 +508,35 @@ mode fields are retained but ignored by the encoder; the job summary shows activ
 parameters only. Bit depth is not offered for lossy codecs; Opus has no rate selector.
 Outputs are checked for requested PCM depth/rate and DSD rate before replacement.
 All previous quotas, deadlines, cancellation, tagging and archive policies apply.
+
+
+## Release news
+
+`GET /api/news` requires a current session and returns dated release notes plus
+`seen` for the latest entry. `POST /api/news/read` accepts exactly `{version: id}`;
+it rechecks the session after reading the bounded body and records only that
+account’s acknowledgement. Missing/disabled sessions return 401, invalid versions
+or extra fields return 400, and cross-origin writes return 403. Repeated reads
+are idempotent. `seenReleaseIds` is stored privately in `DATA_DIR/users.json`,
+with at most 50 known release ids and no extra data in public account profiles.
+Late acknowledgements from an old tab cannot undo a newer dismissal.
+
+The toolbar reader and non-blocking notification share the same release data.
+Closing the notification or reader (Close, Escape or **Понятно**) acknowledges the
+viewed release. Opening by itself does not. The toolbar button can always reopen
+the notes, including when already seen. The reader keeps its close controls visible
+and returns keyboard focus to News. News loading never blocks the download queue.
+The client refreshes on login, window focus and once per minute while the reader
+is closed, so a running app can discover a newly deployed release.
+
+A local per-account `qws-news-read:<user-id>` list suppresses repeats while offline
+and retries unconfirmed latest-version acknowledgements on refresh. Cross-tab
+storage events also hide dismissed notifications. When browser storage is blocked,
+server-side dismissal still works; if both network and storage are unavailable,
+only the current page can remember the dismissal until connectivity returns.
+
+For every update, prepend a new factual entry with a **new unique id** to
+`server/utils/news.mjs`, keep newest first and at most 50 entries, then rebuild and
+deploy. Never reuse a previously announced id for new changes: dismissals are keyed
+by id. The initial entry summarizes the current download, format, lyrics and
+archive features. This workflow is also required by `AGENTS.md`.

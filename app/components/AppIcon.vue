@@ -1,6 +1,7 @@
 <script setup lang="ts">
 withDefaults(defineProps<{ name?: string }>(), { name: "download" });
 const paths: Record<string, string> = {
+  news: "M4 3h16v18H4zM8 7h8M8 11h8M8 15h3m3 0h2M8 18h3m3 0h2",
   key: "M14 3a7 7 0 0 0-6.5 9.5L2 18v4h4v-3h3v-3l2-2A7 7 0 1 0 14 3m3 4v.01",
   user: "M4 21v-2a8 8 0 0 1 16 0v2M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8",
   users:
