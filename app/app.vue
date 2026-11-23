@@ -686,7 +686,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         >
                       </div>
                       <QobuzConnection :connected="status?.oauthConnected || false" :result="qobuzResult" :needs-login="status?.sessionNeedsLogin || false" />
-                      <QobuzSubscription v-if="status?.subscription" :subscription="status.subscription" />
+                      <QobuzSubscription v-if="status?.subscription" :subscription="status.subscription" @refreshed="refresh" />
                       <div class="panel settings-list">
                         <div class="setting-row">
                           <span>OrpheusDL и модуль Qobuz</span

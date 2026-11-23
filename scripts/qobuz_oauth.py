@@ -8,7 +8,7 @@ import sys
 
 import requests
 from qobuz_dl.bundle import Bundle
-from qobuz_web import WebClient
+from qobuz_web import WebClient, subscription_summary
 from qobuz_dl.exceptions import AuthenticationError
 
 
@@ -21,10 +21,25 @@ def prepare():
             'secrets': list(bundle.get_secrets().values())}
 
 
+def current_subscription(client, user_id):
+    # Login can return an old subscription record. Query the current profile with
+    # the rotated, authenticated token; optional metadata failure must not revoke it.
+    try:
+        response = client.session.get(client.base + 'user/get', timeout=30)
+        response.raise_for_status()
+        profile = response.json()
+        user = profile.get('user', profile) if isinstance(profile, dict) else None
+        if not isinstance(user, dict) or str(user.get('id')) != str(user_id):
+            raise ValueError('Invalid profile')
+        return subscription_summary({'user': user}, source='user/get')
+    except (requests.RequestException, ValueError, TypeError, KeyError):
+        return client.subscription
+
+
 def refresh(saved):
     bundle = Bundle()
     client = WebClient(saved['userId'], saved['authToken'], bundle.get_app_id(), list(bundle.get_secrets().values()))
-    return {'userId': saved['userId'], 'authToken': client.uat, 'subscription': client.subscription}
+    return {'userId': saved['userId'], 'authToken': client.uat, 'subscription': current_subscription(client, saved['userId'])}
 
 
 def exchange(context, code):
@@ -50,7 +65,7 @@ def exchange(context, code):
         raise ValueError('Invalid account')
     # Reuse the same profile/subscription/signing checks as actual downloads.
     client = WebClient(user_id, token, context['appId'], context['secrets'])
-    return {'userId': user_id, 'authToken': client.uat, 'subscription': client.subscription}
+    return {'userId': user_id, 'authToken': client.uat, 'subscription': current_subscription(client, user_id)}
 
 
 if __name__ == '__main__':

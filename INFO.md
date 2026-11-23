@@ -544,30 +544,23 @@ archive features. This workflow is also required by `AGENTS.md`.
 
 ## Qobuz subscription-period indicator
 
-OAuth exchange and the existing 30-minute session renewal retain only a normalized
-`subscription` object in private `DATA_DIR/qobuz-session.json`: `plan`, `endDate`
-(YYYY-MM-DD), and `autoRenew` (boolean or null). The Python bridge takes these from
-`user.credential.parameters.short_label` (or `user.subscription.offer`),
-`user.subscription.end_date`, and the inverse of boolean `is_canceled`. No billing
-profile, email, full provider response or extra credentials are stored. Node checks
-the fields again before writing. Existing sessions without a subscription field
-are refreshed on startup, without forcing a new browser login; failed attempts
-retain the existing session and follow the existing five-minute retry backoff.
+OAuth exchange and the 30-minute renewal query authenticated `user/get` using the
+rotated token and verify its account id. Login metadata is only an unconfirmed
+fallback if this optional profile request fails. Existing metadata without a source
+triggers migration refresh. Private `DATA_DIR/qobuz-session.json` retains only plan,
+calendar endDate, autoRenew, source and a nullable streaming-capabilities flag.
+No billing profile, email or complete provider response is retained.
 
-`GET /api/status` includes the safe subscription status **only for administrators**.
-Ordinary users receive no `subscription` key. The heading indicator opens Settings;
-the full card shows plan, calendar end date, remaining days, auto-renewal when
-known, and the last successful session-check time in Moscow. It never queries
-Qobuz on each status poll and never changes download eligibility from calendar data.
+`GET /api/status` includes subscription metadata only for administrators. Calendar
+days are inclusive and calculated in Europe/Moscow; seven days or fewer warns.
+A historical date with active or unknown streaming rights is unconfirmed and never
+labels the subscription expired. Explicitly disabled rights are shown separately;
+none of these labels controls download eligibility. JWT expiry is never a billing date.
+The last-check timestamp identifies the request time, not the age of a provider record.
+Unknown dates, stale data over one hour and login requirements are labelled explicitly.
 
-The end date is treated as an inclusive calendar day, with remaining days measured
-against the current Europe/Moscow date. Seven days or fewer is a warning; a passed
-period is marked ended. A missing/invalid date is unknown. Data over one hour old
-or a session needing login gets an explicit warning instead of a live active
-indicator. End-of-period is not a claim that auto-renewal will stop access: the
-provider can return a new date after renewal. JWT expiration is not used here.
-
-Field references: [Minim user-profile schema](https://github.com/bbye98/minim/blob/main/src/minim/qobuz.py)
-and [Qobuz renewal help](https://help.qobuz.com/en/articles/10196-when-will-the-renewal-happen).
-The date is displayed only when Qobuz supplies it; missing data must be checked
-in the provider account. Rebuild the image to apply bridge and UI changes.
+The admin card provides `POST /api/admin/qobuz/refresh` through «Обновить данные».
+It shares the background refresher, serializes requests, bounds manual success
+rechecks to one minute and failures to five minutes, and rechecks admin authorization
+after waiting. Failures preserve the previous session. The heading opens Settings.
+Rebuild the image to apply bridge and UI changes.

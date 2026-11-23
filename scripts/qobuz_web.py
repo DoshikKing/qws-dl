@@ -19,7 +19,7 @@ class QobuzWebError(Exception):
     """An actionable error that contains no credentials or API response body."""
 
 
-def subscription_summary(profile):
+def subscription_summary(profile, source='user/login'):
     """Keep only display metadata; never retain the billing/user response."""
     user = profile.get('user') if isinstance(profile, dict) else None
     user = user if isinstance(user, dict) else {}
@@ -41,7 +41,10 @@ def subscription_summary(profile):
     except ValueError:
         end_date = None
     canceled = subscription.get('is_canceled')
-    return {'plan': plan, 'endDate': end_date, 'autoRenew': not canceled if isinstance(canceled, bool) else None}
+    flags = [parameters.get(key) for key in ('lossy_streaming', 'lossless_streaming', 'hires_streaming')]
+    active = True if any(value is True for value in flags) else False if all(value is False for value in flags) else None
+    return {'plan': plan, 'endDate': end_date, 'autoRenew': not canceled if isinstance(canceled, bool) else None,
+            'source': source, 'accessActive': active}
 
 
 class WebClient(Client):

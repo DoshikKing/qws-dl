@@ -22,7 +22,7 @@ from qobuz_web import web_api_class, QobuzWebError, subscription_summary
 from modules.qobuz.qobuz_api import Qobuz
 from search_qobuz import search_catalog
 from diagnose_qobuz import diagnose
-from qobuz_oauth import prepare, exchange, refresh
+from qobuz_oauth import prepare, exchange, refresh, current_subscription
 
 
 class WebLoginTest(unittest.TestCase):
@@ -30,7 +30,7 @@ class WebLoginTest(unittest.TestCase):
         profile = {'user_auth_token': 'private-token', 'user': {'email': 'private@example.test', 'subscription':
                    {'end_date': '2030-04-15', 'is_canceled': True, 'billing': 'private'},
                    'credential': {'parameters': {'short_label': 'Studio'}}}}
-        self.assertEqual(subscription_summary(profile), {'plan': 'Studio', 'endDate': '2030-04-15', 'autoRenew': False})
+        self.assertEqual(subscription_summary(profile), {'plan': 'Studio', 'endDate': '2030-04-15', 'autoRenew': False, 'source': 'user/login', 'accessActive': None})
         for value in ['2030-02-30', '2030-4-15', 'not-a-date', 9999999999, True, None]:
             profile['user']['subscription']['end_date'] = value
             self.assertIsNone(subscription_summary(profile)['endDate'])
@@ -39,7 +39,24 @@ class WebLoginTest(unittest.TestCase):
         self.assertIsNone(subscription_summary(profile)['autoRenew'])
         profile['user']['credential']['parameters']['short_label'] = 'x' * 81
         self.assertIsNone(subscription_summary(profile)['plan'])
-        self.assertEqual(subscription_summary({}), {'plan': None, 'endDate': None, 'autoRenew': None})
+        self.assertEqual(subscription_summary({}), {'plan': None, 'endDate': None, 'autoRenew': None, 'source': 'user/login', 'accessActive': None})
+
+    def test_current_profile_failure_or_account_mismatch_keeps_login_metadata(self):
+        from types import SimpleNamespace
+        client = SimpleNamespace(base='https://fixture.test/', session=SimpleNamespace(), subscription={'source': 'user/login', 'endDate': '2025-12-04'})
+        for response in [requests.ConnectionError('private'), {'id': 999}, None]:
+            with patch.object(client.session, 'get', create=True) as get:
+                if isinstance(response, Exception):
+                    get.side_effect = response
+                else:
+                    get.return_value.json.return_value = response
+                self.assertEqual(current_subscription(client, '12345'), client.subscription)
+
+    def test_streaming_capabilities_require_explicit_boolean_flags(self):
+        for flags, expected in [({}, None), ({'lossy_streaming': False}, None),
+            ({'lossy_streaming': False, 'lossless_streaming': False, 'hires_streaming': False}, False),
+            ({'lossless_streaming': True}, True), ({'lossless_streaming': 'true'}, None)]:
+            self.assertIs(subscription_summary({'user': {'credential': {'parameters': flags}}})['accessActive'], expected)
 
     def test_refresh_worker_protocol_returns_rotation_or_safe_expiry(self):
         previous_logging = logging.root.manager.disable
@@ -59,13 +76,13 @@ class WebLoginTest(unittest.TestCase):
                 if mode == '401':
                     self.assertEqual(report, {'error': 'session_expired'})
                 else:
-                    self.assertEqual(report, {'userId': '12345', 'authToken': 'fixture-web-token', 'subscription': {'plan': 'fixture', 'endDate': '2030-04-15', 'autoRenew': True}})
+                    self.assertEqual(report, {'userId': '12345', 'authToken': 'fixture-web-token', 'subscription': {'plan': 'fixture', 'endDate': '2026-12-26', 'autoRenew': True, 'source': 'user/get', 'accessActive': True}})
         finally:
             logging.disable(previous_logging)
 
     def test_refresh_retains_the_rotated_token_and_checks_signing(self):
         result = refresh({'userId': '12345', 'authToken': 'fixture-browser-token'})
-        self.assertEqual(result, {'userId': '12345', 'authToken': 'fixture-web-token', 'subscription': {'plan': 'fixture', 'endDate': '2030-04-15', 'autoRenew': True}})
+        self.assertEqual(result, {'userId': '12345', 'authToken': 'fixture-web-token', 'subscription': {'plan': 'fixture', 'endDate': '2026-12-26', 'autoRenew': True, 'source': 'user/get', 'accessActive': True}})
         self.assertEqual(self.login_calls, 1)
 
     def test_oauth_code_exchange_validates_profile_and_signing(self):
@@ -90,7 +107,7 @@ class WebLoginTest(unittest.TestCase):
 
         with patch.dict(os.environ, {'QOBUZ_AUTH_MODE': 'token'}), patch.object(requests.sessions.Session, 'request', transport):
             result = exchange(context, 'fixture-code')
-        self.assertEqual(result, {'userId': '12345', 'authToken': 'fixture-web-token', 'subscription': {'plan': 'fixture', 'endDate': '2030-04-15', 'autoRenew': True}})
+        self.assertEqual(result, {'userId': '12345', 'authToken': 'fixture-web-token', 'subscription': {'plan': 'fixture', 'endDate': '2026-12-26', 'autoRenew': True, 'source': 'user/get', 'accessActive': True}})
         self.assertEqual(self.login_calls, 1)
 
     def test_oauth_missing_player_key_or_code_is_rejected(self):
@@ -168,7 +185,7 @@ class WebLoginTest(unittest.TestCase):
                 chunks += [f'a.initialSeed("{value[:4]}",window.utimezone.{timezone})',
                            f'name:"Europe/{timezone.capitalize()}",info:"{value[4:12]}",extras:"{value[12:]}"']
             return self.response(url, ';'.join(chunks) + ';privateKey:"fixtureOauthKey"')
-        params = kwargs.get('data', {}) if url.endswith('/user/login') else kwargs.get('params', {})
+        params = kwargs.get('data', {}) if url.endswith('/user/login') else (kwargs.get('params') or {})
         self.assertEqual(params.get('app_id', session.headers.get('X-App-Id')), '123456789')
         if url.endswith('/user/login'):
             self.login_calls += 1
@@ -180,8 +197,12 @@ class WebLoginTest(unittest.TestCase):
             if self.mode == '401':
                 return self.response(url, {'message': 'fixture-password'}, 401)
             parameters = {} if self.mode == 'subscription' else {'short_label': 'fixture'}
-            return self.response(url, {'user_auth_token': 'fixture-web-token', 'user': {'id': 12345, 'subscription': {'end_date': '2030-04-15', 'is_canceled': False}, 'credential': {'parameters': parameters}}})
+            return self.response(url, {'user_auth_token': 'fixture-web-token', 'user': {'id': 12345, 'subscription': {'end_date': '2025-12-04', 'is_canceled': False}, 'credential': {'parameters': parameters}}})
         self.assertEqual(session.headers.get('X-User-Auth-Token'), 'fixture-web-token')
+        if url.endswith('/user/get'):
+            self.assertEqual(kwargs.get('timeout'), 30)
+            return self.response(url, {'id': 12345, 'subscription': {'end_date': '2026-12-26', 'is_canceled': False},
+                'credential': {'parameters': {'short_label': 'fixture', 'lossless_streaming': True}}})
         if url.endswith('/track/getFileUrl'):
             signature = f"trackgetFileUrlformat_id{params['format_id']}intentstreamtrack_id{params['track_id']}1000fixture-valid-secret"
             if params['request_sig'] != hashlib.md5(signature.encode()).hexdigest():

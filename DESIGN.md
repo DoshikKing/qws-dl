@@ -115,4 +115,10 @@ page heading; it opens Settings. The detailed Qobuz card shows the provider’s
 calendar end date, remaining Moscow calendar days, plan and known auto-renewal flag.
 Warn within seven days, keep expiry distinct from automatic renewal, and explicitly
 label unknown dates, stale data and login requirements. Never infer subscription
-expiry from a JWT or expose the service account’s subscription to ordinary users.
+expiry from a historical billing date or a JWT or expose the service account’s subscription to ordinary users.
+
+Subscription metadata comes from the authenticated current profile. A past date
+with active or unknown streaming access must be labelled unconfirmed, with the
+provider date clearly separated from the current period. Show the year for old
+dates. The full admin card offers manual refresh with busy, success and error
+feedback; the last check time does not certify the provider record is current.
