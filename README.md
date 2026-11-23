@@ -108,8 +108,10 @@ HTTPS to that host. The existing archive authorization and account quotas apply.
 ## Output formats
 
 Before adding Qobuz links or catalog items, choose **Формат файла**: original
-(default), MP3 320 kbps, AAC/M4A 256 kbps, Vorbis/OGG VBR q6, Opus 192 kbps,
-APE, ALAC/M4A, DSD64/DSF or TTA. Source quality remains independent; prefer FLAC
+(default), MP3, AAC/M4A, Vorbis/OGG, Opus, APE, ALAC/M4A, DSD/DSF or TTA.
+Expand **Настройки формата** to adjust supported bitrate/VBR quality, compression,
+PCM bit depth/sample rate or DSD64/128/256 and headroom. Settings are kept per
+format while switching between link and catalog forms; Reset restores defaults. Source quality remains independent; prefer FLAC
 when converting. Lossless formats do not restore quality lost in MP3; PCM-to-DSD
 does not improve the source. Converted tracks retain common tags, artwork and
 lyrics, with LRC sidecars where available. Conversion happens once before ZIP

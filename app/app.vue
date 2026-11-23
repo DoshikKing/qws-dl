@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { audioFormats } from "#shared/audio-formats.mjs";
+import { describeFormat, normalizeFormatOptions } from "#shared/audio-formats.mjs";
 type Job = {
   id: string;
   kind?: string;
@@ -7,6 +7,7 @@ type Job = {
   title?: string | null;
   quality: string;
   outputFormat?: string;
+  formatOptions?: Record<string, string | number>;
   status: string;
   createdAt: string;
   log: string;
@@ -79,6 +80,7 @@ const inputMode = ref<"link" | "search">("link");
 const quality = ref("hifi");
 const retentionHours = ref(24);
 const outputFormat = ref('original');
+const formatSettings = ref<Record<string, Record<string, string | number>>>({});
 const retentionMode = ref('time');
 const downloadLimit = ref(1);
 const lyrics = ref(false);
@@ -173,7 +175,7 @@ async function refresh() {
       retentionMode.value === (previous.retentionMode || 'time') && downloadLimit.value === (previous.downloadLimit || 1) && lyrics.value === (previous.lyrics === true));
     status.value = state;
     jobs.value = queue;
-    if (entering) outputFormat.value = 'original';
+    if (entering) { outputFormat.value = 'original'; formatSettings.value = {}; }
     if (useDefaults) {
       quality.value = state.quality;
       retentionHours.value = state.retentionHours;
@@ -233,6 +235,7 @@ async function addJob() {
         quality: quality.value,
         retentionHours: retentionHours.value,
         retentionMode: retentionMode.value, downloadLimit: downloadLimit.value, outputFormat: outputFormat.value,
+        formatOptions: normalizeFormatOptions(outputFormat.value, formatSettings.value[outputFormat.value] || {}),
         lyrics: lyrics.value,
       },
     });
@@ -443,7 +446,7 @@ onBeforeUnmount(() => clearInterval(timer));
                           />
                         </div>
                       </div>
-                      <OutputFormat prefix="download" v-model="outputFormat" :disabled="busy" />
+                      <OutputFormat prefix="download" v-model="outputFormat" v-model:settings="formatSettings" :disabled="busy" />
                       <div class="form-options">
                         <div class="field">
                           <label for="quality">Качество</label
@@ -484,6 +487,7 @@ onBeforeUnmount(() => clearInterval(timer));
                       v-model:lyrics="lyrics"
                       v-model:quality="quality"
                       v-model:output-format="outputFormat"
+                      v-model:format-settings="formatSettings"
                       v-model:retention-hours="retentionHours"
                       v-model:retention-mode="retentionMode"
                       v-model:download-limit="downloadLimit"
@@ -624,7 +628,7 @@ onBeforeUnmount(() => clearInterval(timer));
                             </button>
                           </div>
                         </div>
-                        <p v-if="job.outputFormat && job.outputFormat !== 'original'" class="item-meta">Формат: {{ audioFormats[job.outputFormat as keyof typeof audioFormats] || job.outputFormat }}</p>
+                        <p v-if="job.outputFormat && job.outputFormat !== 'original'" class="item-meta">Формат: {{ describeFormat(job.outputFormat, job.formatOptions || {}) }}</p>
                         <p class="job-retention"><ArchiveRetention :job="job" /></p>
                         <p v-if="job.cleanupError" class="job-error" role="alert">
                           {{ job.cleanupError }}

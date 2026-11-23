@@ -22,6 +22,7 @@ export default defineEventHandler(async (event) => {
       body?.lyrics ?? defaults.lyrics,
       { retentionMode: body?.retentionMode ?? defaults.retentionMode, downloadLimit: body?.downloadLimit ?? defaults.downloadLimit },
       body?.outputFormat ?? "original",
+      body?.formatOptions === undefined ? {} : body.formatOptions,
     );
   } catch (error) {
     throw createError({

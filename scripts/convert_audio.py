@@ -1,4 +1,4 @@
-"""Convert downloaded audio with fixed codec profiles; never invoke a shell."""
+"""Convert downloaded audio with validated codec settings; never invoke a shell."""
 import base64
 import json
 import math
@@ -16,15 +16,17 @@ from mutagen.apev2 import APEBinaryValue
 from worker_safety import read_audio_tags
 
 PROFILES = {
-    'mp3': ('.mp3', 'mp3', ['-c:a', 'libmp3lame', '-b:a', '320k', '-ar', '48000']),
-    'aac': ('.m4a', 'aac', ['-c:a', 'aac', '-b:a', '256k', '-ar', '48000']),
-    'vorbis': ('.ogg', 'vorbis', ['-c:a', 'libvorbis', '-q:a', '6', '-ar', '48000']),
-    'opus': ('.opus', 'opus', ['-c:a', 'libopus', '-b:a', '192k', '-ar', '48000']),
+    'mp3': ('.mp3', 'mp3', ['-c:a', 'libmp3lame']),
+    'aac': ('.m4a', 'aac', ['-c:a', 'aac']),
+    'vorbis': ('.ogg', 'vorbis', ['-c:a', 'libvorbis']),
+    'opus': ('.opus', 'opus', ['-c:a', 'libopus']),
     'ape': ('.ape', 'ape', []),
     'alac': ('.m4a', 'alac', ['-c:a', 'alac']),
     'dsd': ('.dsf', 'dsd_lsbf_planar', []),
     'tta': ('.tta', 'tta', ['-c:a', 'tta']),
 }
+FORMAT_FIELDS = json.loads((Path(__file__).resolve().parents[1] / 'shared/audio-options.json').read_text(encoding='utf-8'))
+
 AUDIO = {'.flac', '.mp3', '.m4a', '.ogg', '.opus', '.ape', '.tta', '.dsf'}
 # Common music metadata is translated rather than copying container-specific blobs.
 TAGS = {
@@ -37,6 +39,40 @@ TAGS = {
 
 class ConversionError(ValueError):
     pass
+
+
+def normalize_options(output_format, options):
+    if not isinstance(output_format, str) or output_format not in FORMAT_FIELDS or not isinstance(options, dict):
+        raise ConversionError('Некорректные настройки формата.')
+    fields = FORMAT_FIELDS[output_format]
+    if any(key not in fields for key in options):
+        raise ConversionError('Неизвестный параметр формата.')
+    result = {}
+    for key, field in fields.items():
+        value = options.get(key, field['default'])
+        if not any(type(value) is type(choice) and value == choice for choice, _ in field['choices']):
+            raise ConversionError('Недопустимое значение параметра формата.')
+        result[key] = value
+    return result
+
+
+def codec_args(output_format, options, bits):
+    args = list(PROFILES[output_format][2])
+    if output_format == 'mp3':
+        args += ['-q:a', str(options['quality'])] if options['mode'] == 'vbr' else ['-b:a', f"{options['bitrate']}k"]
+    elif output_format == 'aac':
+        args += ['-b:a', f"{options['bitrate']}k"]
+    elif output_format == 'vorbis':
+        args += ['-q:a', str(options['quality'])]
+    elif output_format == 'opus':
+        args += ['-b:a', f"{options['bitrate']}k", '-vbr', {'vbr': 'on', 'cbr': 'off', 'cvbr': 'constrained'}[options['mode']],
+                 '-compression_level', str(options['compression']), '-ar', '48000']
+    elif output_format in {'alac', 'tta'}:
+        sample_format = ('s16' if bits <= 16 else 's32') + ('p' if output_format == 'alac' else '')
+        args += ['-sample_fmt', sample_format, '-bits_per_raw_sample', str(max(16, bits))]
+    if options.get('sampleRate'):
+        args += ['-ar', str(options['sampleRate'])]
+    return args
 
 
 def encoder(name):
@@ -60,7 +96,7 @@ def codec_environment():
 
 def probe(path):
     result = subprocess.run([encoder('ffprobe'), '-v', 'error', '-protocol_whitelist', 'file',
-        '-select_streams', 'a:0', '-show_entries', 'stream=codec_name,sample_rate,channels,bits_per_raw_sample,bits_per_sample,duration:format=duration',
+        '-select_streams', 'a:0', '-show_entries', 'stream=codec_name,sample_rate,channels,bit_rate,bits_per_raw_sample,bits_per_sample,duration:format=duration',
         '-of', 'json', str(path)], stdin=subprocess.DEVNULL, capture_output=True, timeout=30, check=True, env=codec_environment())
     data = json.loads(result.stdout)
     stream = data['streams'][0]
@@ -143,6 +179,9 @@ def copy_tags(source, target):
     elif isinstance(old, MP4):
         for cover in old.get('covr', []):
             picture = Picture(); picture.data = bytes(cover); picture.mime = 'image/png' if cover.imageformat == MP4Cover.FORMAT_PNG else 'image/jpeg'; picture.type = 3; pictures.append(picture)
+    elif source.suffix.lower() == '.ape' and old.get('Cover Art (Front)'):
+        data = bytes(old['Cover Art (Front)']).split(b'\0', 1)[1]
+        picture = Picture(); picture.data = data; picture.mime = 'image/png' if data.startswith(b'\x89PNG') else 'image/jpeg'; picture.type = 3; pictures.append(picture)
     else:
         pictures = [Picture(base64.b64decode(value)) for value in old.get('metadata_block_picture', [])]
     if pictures:
@@ -158,16 +197,16 @@ def copy_tags(source, target):
     new.save()
 
 
-def convert_file(path, output_format, root):
+def convert_file(path, output_format, root, options=None):
+    options = normalize_options(output_format, {} if options is None else options)
     suffix, codec, args = PROFILES[output_format]
     info, duration = probe(path)
-    if info['codec_name'] == codec:
-        return
     destination = path.with_suffix(suffix)
     if destination != path and (destination.exists() or destination.is_symlink()):
         raise ConversionError('Имя выходного файла уже занято.')
-    bits = int(info.get('bits_per_raw_sample') or info.get('bits_per_sample') or 24) or 24
-    if output_format in {'ape', 'alac'} and bits > 24 and info['codec_name'] not in {'mp3', 'aac', 'vorbis', 'opus'}:
+    bits = options.get('bitDepth') or int(info.get('bits_per_raw_sample') or info.get('bits_per_sample') or 24) or 24
+    args = codec_args(output_format, options, bits)
+    if output_format in {'ape', 'alac'} and bits > 24:
         raise ConversionError('Для APE и ALAC поддерживается PCM до 24 бит.')
     print(f'Конвертация: {path.name} → {output_format.upper()}', flush=True)
     with tempfile.TemporaryDirectory(prefix='.qws-convert-', dir=path.parent) as directory:
@@ -176,19 +215,25 @@ def convert_file(path, output_format, root):
         if output_format in {'ape', 'dsd'}:
             intermediate = Path(directory) / ('pcm.wav' if output_format == 'ape' else 'pcm.f32')
             if output_format == 'ape':
-                run(ffmpeg + ['-c:a', 'pcm_s24le' if bits > 16 else 'pcm_s16le', '-write_bext', '0', str(intermediate)], root)
-                run([encoder('qws-mac'), str(intermediate), str(output)], root)
+                run(ffmpeg + ['-c:a', 'pcm_s24le' if bits > 16 else 'pcm_s16le'] + (['-ar', str(options['sampleRate'])] if options['sampleRate'] else []) + ['-write_bext', '0', str(intermediate)], root)
+                run([encoder('qws-mac'), str(intermediate), str(output), str(options['compression'])], root)
             else:
                 run(ffmpeg + ['-c:a', 'pcm_f32le', '-f', 'f32le', str(intermediate)], root)
                 # Feed only trusted, generated raw PCM to the DSD-capable SoX fork.
                 run([encoder('sox-dsd'), '-t', 'f32', '-L', '-r', str(info['sample_rate']), '-c', str(info['channels']), str(intermediate),
-                     '-r', '2822400', str(output), 'gain', '-6', 'rate', '-v', '2822400', 'sdm'], root)
+                     '-r', str(options['dsdRate']), str(output), 'gain', str(-options['headroom']), 'rate', '-v', str(options['dsdRate']), 'sdm'], root)
             intermediate.unlink()
         else:
             run(ffmpeg + args + [str(output)], root)
         converted, length = probe(output)
         if converted['codec_name'] != codec or abs(length - duration) > 0.25:
             raise ConversionError('Проверка сконвертированного файла не пройдена.')
+        if options.get('sampleRate') and int(converted['sample_rate']) != options['sampleRate']:
+            raise ConversionError('Частота результата не соответствует выбранной.')
+        if options.get('bitDepth') and int(converted.get('bits_per_raw_sample') or converted.get('bits_per_sample') or 0) != options['bitDepth']:
+            raise ConversionError('Битность результата не соответствует выбранной.')
+        if output_format == 'dsd' and int(converted['sample_rate']) * 8 != options['dsdRate']:
+            raise ConversionError('Частота DSD не соответствует выбранной.')
         copy_tags(path, output)
         budget(root)
         os.replace(output, destination)
@@ -196,7 +241,8 @@ def convert_file(path, output_format, root):
             path.unlink()
 
 
-def convert_downloads(directory, output_format='original'):
+def convert_downloads(directory, output_format='original', options=None):
+    options = normalize_options(output_format, {} if options is None else options)
     ensure_encoder(output_format)
     if output_format == 'original':
         return
@@ -209,7 +255,7 @@ def convert_downloads(directory, output_format='original'):
             if name.startswith('.qws-') or path.is_symlink() or path.suffix.lower() not in AUDIO or not path.is_file():
                 continue
             try:
-                convert_file(path, output_format, root)
+                convert_file(path, output_format, root, options)
             except Exception:
                 failed = True
                 print(f'Не удалось конвертировать {path.name}; исходный файл сохранён.', flush=True)

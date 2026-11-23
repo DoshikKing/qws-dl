@@ -1,4 +1,6 @@
 import base64
+import json
+import struct
 import os
 from pathlib import Path
 import shutil
@@ -70,7 +72,7 @@ class ConversionTest(unittest.TestCase):
                     self.assertIn('[00:00.250]', output.with_suffix('.lrc').read_text())
                     if fmt in {'alac', 'ape', 'tta'}:
                         self.assertEqual(pcm(output), original_pcm)
-                    conversion.convert_downloads(root, fmt)  # Safe retry; no second lossy encode.
+                    conversion.convert_downloads(root, fmt)  # A requested profile also applies to an already matching codec.
                     self.assertEqual(len(list(root.glob('*' + suffix))), 1)
                     self.assertFalse(list(root.glob('.qws-convert-*')))
 
@@ -91,6 +93,53 @@ class ConversionTest(unittest.TestCase):
                     import zipfile
                     with zipfile.ZipFile(archive) as zip:
                         self.assertIn(output.name, zip.namelist()); self.assertIn(output.with_suffix('.lrc').name, zip.namelist())
+
+    def test_custom_profiles_change_real_bitrate_depth_rate_compression_and_dsd(self):
+        cases = [('mp3', {'bitrate': 128, 'sampleRate': 44100}), ('mp3', {'mode': 'vbr', 'quality': 0}),
+                 ('mp3', {'mode': 'vbr', 'quality': 9}), ('aac', {'bitrate': 96, 'sampleRate': 32000}),
+                 ('aac', {'bitrate': 320, 'sampleRate': 96000}), ('vorbis', {'quality': 0, 'sampleRate': 32000}),
+                 ('vorbis', {'quality': 10}), ('opus', {'bitrate': 64, 'mode': 'cbr', 'compression': 0}),
+                 ('opus', {'bitrate': 256, 'mode': 'cvbr', 'compression': 10}),
+                 *[('ape', {'compression': level, 'bitDepth': 16, 'sampleRate': 44100}) for level in [1000, 2000, 3000, 4000, 5000]],
+                 ('alac', {'bitDepth': 16, 'sampleRate': 48000}), ('alac', {'bitDepth': 24, 'sampleRate': 192000}),
+                 ('tta', {'bitDepth': 16, 'sampleRate': 44100}), ('tta', {'bitDepth': 24, 'sampleRate': 96000}),
+                 ('tta', {'bitDepth': 24, 'sampleRate': 176400}),
+                 ('dsd', {'dsdRate': 5644800, 'headroom': 3}), ('dsd', {'dsdRate': 11289600, 'headroom': 12})]
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'MIN_FREE_BYTES': '0'}):
+            for index, (fmt, options) in enumerate(cases):
+                with self.subTest(format=fmt, options=options):
+                    root = Path(directory) / str(index); root.mkdir(); original = source(root)
+                    conversion.convert_downloads(root, fmt, options)
+                    output = original.with_suffix(conversion.PROFILES[fmt][0]); info, _ = conversion.probe(output)
+                    self.assertEqual(metadata(mutagen.File(output)), ('Артист', 'Песня', 'Альбом'))
+                    if options.get('sampleRate'): self.assertEqual(int(info['sample_rate']), options['sampleRate'])
+                    if options.get('bitDepth'): self.assertEqual(int(info['bits_per_raw_sample']), options['bitDepth'])
+                    if fmt == 'mp3' and options.get('bitrate'): self.assertEqual(int(info['bit_rate']), options['bitrate'] * 1000)
+                    if fmt == 'ape':
+                        data = output.read_bytes(); descriptor = struct.unpack_from('<I', data, 8)[0]
+                        self.assertEqual(struct.unpack_from('<H', data, descriptor)[0], options['compression'])
+                    if fmt == 'opus' and options.get('mode') == 'cbr':
+                        packets = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-select_streams', 'a:0', '-show_entries', 'packet=size', '-of', 'json', str(output)]))['packets']
+                        self.assertEqual({int(packet['size']) for packet in packets}, {160})
+                    if fmt == 'dsd': self.assertEqual(mutagen.File(output).info.sample_rate, options['dsdRate'])
+                    if fmt == 'mp3' and options.get('bitrate'):
+                        # Matching input codec must still honor a newly chosen bitrate/rate.
+                        conversion.convert_downloads(root, fmt, {'bitrate': 192, 'sampleRate': 48000})
+                        changed, _ = conversion.probe(output)
+                        self.assertEqual(int(changed['bit_rate']), 192000); self.assertEqual(int(changed['sample_rate']), 48000)
+
+    def test_settings_boundary_rejects_types_unknown_fields_and_other_format_controls(self):
+        for fmt, bad in [('original', {'bitrate': 128}), ('mp3', {'bitDepth': 24}), ('alac', {'bitrate': 192}),
+                         ('mp3', {'bitrate': '128'}), ('mp3', {'bitrate': True}), ('mp3', {'sampleRate': 192000}),
+                         ('vorbis', {'quality': 11}), ('opus', {'compression': -1}), ('ape', {'compression': 9999}),
+                         ('alac', {'bitDepth': 32}), ('tta', {'bitDepth': 32}), ('dsd', {'dsdRate': 999999999}), ('tta', {'extra_args': '-y'}),
+                         ('aac', []), ('aac', None), ('aac', {'bitrate': 256.0})]:
+            with self.subTest(format=fmt, bad=bad), self.assertRaises(conversion.ConversionError):
+                conversion.normalize_options(fmt, bad)
+        self.assertEqual(conversion.normalize_options('mp3', {})['bitrate'], 320)
+        for fmt in conversion.PROFILES:
+            defaults = conversion.normalize_options(fmt, {})
+            self.assertEqual(conversion.normalize_options(fmt, defaults), defaults)
 
     def test_failure_collision_space_limit_links_and_invalid_format_preserve_source(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'MIN_FREE_BYTES': '0'}):

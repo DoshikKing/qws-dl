@@ -31,7 +31,7 @@ test('HTTP defaults and counted ZIPs: permissions, aborted/concurrent transfers,
     await writeFile(join(root, 'orpheus.py'), '# fixture');await writeFile(join(root, 'modules/qobuz/interface.py'), '# fixture');
     await writeFile(join(data, 'qobuz-session.json'), JSON.stringify({ userId: '123', authToken: 'fixture-token', updatedAt: new Date().toISOString() }));
     await writeFile(python, `#!${actualPython}
-import os, sys, time, subprocess
+import os, sys, time, subprocess, json
 from pathlib import Path
 if sys.argv[1] != '-u':
     os.execv(${JSON.stringify(actualPython)}, [${JSON.stringify(actualPython)}, *sys.argv[1:]])
@@ -39,7 +39,7 @@ if os.environ.get('QWS_OUTPUT_FORMAT', 'original') != 'original':
     subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'sine=duration=0.5', '-metadata', 'artist=Fixture', '-metadata', 'title=Track', str(Path(os.environ['DOWNLOAD_DIR'], 'fixture.flac'))], check=True)
     sys.path.insert(0, ${JSON.stringify(resolve('scripts'))})
     from convert_audio import convert_downloads
-    convert_downloads(os.environ['DOWNLOAD_DIR'], os.environ['QWS_OUTPUT_FORMAT'])
+    convert_downloads(os.environ['DOWNLOAD_DIR'], os.environ['QWS_OUTPUT_FORMAT'], json.loads(os.environ.get('QWS_FORMAT_OPTIONS', '{}')))
     sys.exit(0)
 if sys.argv[-2].endswith('/127'): time.sleep(0.5)
 with Path(os.environ['DOWNLOAD_DIR'], 'fixture.flac').open('wb') as out:
@@ -138,19 +138,36 @@ with Path(os.environ['DOWNLOAD_DIR'], 'fixture.flac').open('wb') as out:
     assert.equal((await request(ownPath, alice)).status, 410);
     await request('/api/logout', bob, 'POST');
     assert.equal((await request(ownPath, bob, 'DELETE')).status, 401);
+    const profiles = {mp3:{bitrate:128,sampleRate:44100},aac:{bitrate:192,sampleRate:44100},vorbis:{quality:4,sampleRate:32000},
+      opus:{bitrate:96,mode:'cbr',compression:0},ape:{compression:4000,bitDepth:16,sampleRate:44100},
+      alac:{bitDepth:24,sampleRate:44100},dsd:{dsdRate:5644800,headroom:9},tta:{bitDepth:24,sampleRate:48000}};
     for (const outputFormat of ['mp3', 'aac', 'vorbis', 'opus', 'ape', 'alac', 'dsd', 'tta']) {
-      const converted = await add('130', {outputFormat, retentionMode:'time', lyrics:false});
+      const converted = await add('130', {outputFormat, formatOptions:profiles[outputFormat], retentionMode:'time', lyrics:false});
       assert.equal(converted.outputFormat, outputFormat);
+      for (const [key,value] of Object.entries(profiles[outputFormat])) assert.equal(converted.formatOptions[key], value);
       await until(async () => !!(await jobs()).find(item => item.id === converted.id)?.hasFiles);
       const result = (await jobs()).find(item => item.id === converted.id);
       assert.equal(result.status, 'completed', result.error + ' ' + result.log);
       const zip = await request(`/api/jobs/${converted.id}/archive`, alice); assert.equal(zip.status, 200);
       const archive = join(base, `${outputFormat}.zip`); await writeFile(archive, Buffer.from(await zip.arrayBuffer()));
       const suffix = {mp3:'.mp3',aac:'.m4a',vorbis:'.ogg',opus:'.opus',ape:'.ape',alac:'.m4a',dsd:'.dsf',tta:'.tta'}[outputFormat];
-      execFileSync(actualPython, ['-c', 'import sys,zipfile;z=zipfile.ZipFile(sys.argv[1]);assert z.namelist()==["fixture"+sys.argv[2]]', archive, suffix]);
+      execFileSync(actualPython, ['-c', `import sys,json,zipfile,tempfile,pathlib
+sys.path.insert(0,${JSON.stringify(resolve('scripts'))})
+from convert_audio import probe
+import mutagen
+with tempfile.TemporaryDirectory() as d:
+ z=zipfile.ZipFile(sys.argv[1]); assert z.namelist()==['fixture'+sys.argv[2]];z.extractall(d)
+ out=pathlib.Path(d)/('fixture'+sys.argv[2]); info,_=probe(out);options=json.loads(sys.argv[3])
+ if options.get('sampleRate'): assert int(info['sample_rate'])==options['sampleRate']
+ if options.get('bitDepth'): assert int(info['bits_per_raw_sample'])==options['bitDepth']
+ if options.get('dsdRate'): assert mutagen.File(out).info.sample_rate==options['dsdRate']
+ if sys.argv[2]=='.mp3': assert int(info['bit_rate'])==options['bitrate']*1000
+`, archive, suffix, JSON.stringify(profiles[outputFormat])]);
     }
     for (const outputFormat of ['flac;touch /tmp/not-allowed', 'unknown', {}, ['mp3']])
       assert.equal((await request('/api/jobs', alice, 'POST', {url:'https://open.qobuz.com/track/130',outputFormat})).status, 400);
+    for (const [outputFormat,formatOptions] of [['mp3',{bitrate:'128'}],['mp3',{bitDepth:24}],['opus',{compression:11}],['ape',{compression:9999}],['dsd',{dsdRate:999999999}],['alac',{bitDepth:32}],['tta',{extra_args:'-y'}],['mp3',null]])
+      assert.equal((await request('/api/jobs', alice, 'POST', {url:'https://open.qobuz.com/track/130',outputFormat,formatOptions})).status, 400);
     const slow = http.request(origin + '/api/admin/settings', { method: 'PUT', headers: { cookie: admin, 'content-type': 'application/json', 'transfer-encoding': 'chunked' } });
     const revoked = new Promise((done, reject) => { slow.on('response', async result => { for await (const chunk of result) {} done(result.statusCode); });slow.on('error', reject); });
     slow.write('{');await new Promise(done => setTimeout(done, 100));

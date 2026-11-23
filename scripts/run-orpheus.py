@@ -7,7 +7,7 @@ import runpy
 import sys
 
 from qobuz_web import QobuzWebError
-from convert_audio import ConversionError, ensure_encoder, convert_downloads
+from convert_audio import ConversionError, ensure_encoder, convert_downloads, normalize_options
 from media_title import install_title_reporter
 from worker_safety import install_network_safety, install_download_safety
 
@@ -17,6 +17,10 @@ def main():
         raise ValueError('Expected: run-orpheus.py ORPHEUS_DIR QOBUZ_URL QUALITY')
     root, url, quality = Path(sys.argv[1]).resolve(), sys.argv[2], sys.argv[3]
     output_format = os.environ.get('QWS_OUTPUT_FORMAT', 'original')
+    try:
+        format_options = normalize_options(output_format, json.loads(os.environ.get('QWS_FORMAT_OPTIONS', '{}')))
+    except (ValueError, TypeError) as error:
+        raise ConversionError('Некорректные настройки формата.') from error
     ensure_encoder(output_format)
     install_network_safety()
     os.chdir(root)
@@ -78,7 +82,7 @@ def main():
     sys.stdout = output
     sys.argv = ['orpheus.py', '-o', os.environ['DOWNLOAD_DIR'], url]
     runpy.run_path(str(root / 'orpheus.py'), run_name='__main__')
-    convert_downloads(os.environ['DOWNLOAD_DIR'], output_format)
+    convert_downloads(os.environ['DOWNLOAD_DIR'], output_format, format_options)
     if os.environ.get('QWS_LYRICS') == '1':
         try:
             from lyrics import enrich_downloads

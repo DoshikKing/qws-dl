@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY --from=audio-codecs /opt/audio-codecs /opt/audio-codecs
 COPY scripts ./scripts
+COPY shared ./shared
 COPY server/utils/qobuz-session.mjs ./server/utils/qobuz-session.mjs
 COPY requirements-orpheus.lock ./
 RUN --mount=type=secret,id=build_ca \

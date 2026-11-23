@@ -448,12 +448,13 @@ allowlist and passes only this identifier to the serialized worker via
 retention/deletion policies. This setting applies to new Qobuz downloads, including
 albums/discographies; existing ZIPs and uploaded lyrics files are not transcoded.
 
-Profiles: MP3 320 kbps/48 kHz, AAC 256 kbps/48 kHz in M4A, Vorbis q6/48 kHz in OGG,
+Defaults: MP3 320 kbps/48 kHz, AAC 256 kbps/48 kHz in M4A, Vorbis q6/48 kHz in OGG,
 Opus 192 kbps/48 kHz, APE normal compression, ALAC in M4A, TTA and DSD64 in DSF
 (2.8224 MHz, -6 dB headroom). Only mono/stereo is supported. APE/ALAC accept lossless
-PCM up to 24 bits; unsupported conversion fails explicitly. PCM lossless profiles
-keep the source sample rate and supported bit depth. Already matching codecs are
-kept without another lossy encode; the original bitrate is retained in that case.
+PCM up to 24 bits; TTA is exposed at 16/24 bits with this FFmpeg encoder. Unsupported conversion fails explicitly. PCM lossless profiles
+keep the source sample rate and supported bit depth. A selected conversion profile also applies when the input codec already matches;
+use original format to avoid re-encoding. Lowering PCM bit depth or sample rate
+changes the audio even with a lossless codec.
 DSD64 is a conversion from PCM, not a native DSD master or an improvement in quality.
 
 Conversion runs before optional LRCLIB enrichment. Common music tags, track/disc
@@ -479,3 +480,31 @@ and fixes compiler-version detection. Corresponding sources with build adjustmen
 and license texts ship in `/opt/audio-codecs/share/{source,licenses}`. No source is
 downloaded at application startup. For local installs, run `npm run setup:codecs`
 with CMake 3.x and a C++ compiler; tools live in `.runtime/audio-codecs/bin`.
+
+
+### Per-format settings
+
+`POST /api/jobs` accepts a codec-specific `formatOptions` object (omitted means
+defaults). Only fields and exact numeric/string choices in
+`shared/audio-options.json` are allowed. UI, Node validation and Python validation
+use the same schema. Unknown fields, another codec’s options, arbitrary arguments,
+strings in place of numbers and out-of-range values are rejected. The canonical
+settings are copied into the job, passed as JSON in `QWS_FORMAT_OPTIONS`, preserved
+on restart and inherited by individual-track retries. Existing jobs use defaults.
+
+- MP3: CBR 96–320 kbps or VBR V0–V9, 32/44.1/48 kHz.
+- AAC: target bitrate 96–320 kbps, 32/44.1/48/88.2/96 kHz.
+- Vorbis: VBR q0–q10, 32/44.1/48 kHz.
+- Opus: 64–256 kbps, VBR/CBR/constrained VBR, complexity 0–10; fixed 48 kHz.
+- APE: Fast/Normal/High/Extra High/Insane; original or 16/24-bit PCM and source or
+  44.1/48/88.2/96/176.4/192 kHz. Compression changes size/CPU, not PCM quality.
+- ALAC and TTA: original or 16/24 bits, source or the same PCM rates as APE.
+- DSD: DSD64/128/256, headroom 3/6/9/12 dB. Higher rates increase time/space.
+
+The native **Настройки формата** disclosure is closed initially. Per-format draft
+choices are retained during this page session across link/search modes, not saved
+as account preferences. Reset affects only the selected format. Inactive MP3
+mode fields are retained but ignored by the encoder; the job summary shows active
+parameters only. Bit depth is not offered for lossy codecs; Opus has no rate selector.
+Outputs are checked for requested PCM depth/rate and DSD rate before replacement.
+All previous quotas, deadlines, cancellation, tagging and archive policies apply.

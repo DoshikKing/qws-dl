@@ -88,7 +88,11 @@ choices in open forms when global defaults change.
 
 
 Qobuz link and catalog download forms offer a labelled output-format select. Keep
-source quality separate from output format, default to original, and show fixed
-lossy profiles and DSD64 without claims of improved quality. The job retains the
+source quality separate from output format, default to original, and show codec
+settings without claims of improved quality. The job retains the
 chosen format, including single-track retries. Use the existing field spacing and
-controls; no new codec settings or UI dependencies.
+controls and no new UI dependencies. Format options live in a native details
+disclosure named «Настройки формата», collapsed initially and on format changes.
+Show only supported controls, preserve each format’s choices between link/search
+forms, disable edits during submission, and offer an explicit reset for the active
+format. Hidden fields must stay out of keyboard navigation; support 320px screens.

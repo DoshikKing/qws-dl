@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { normalizeFormatOptions } from "#shared/audio-formats.mjs";
 type SearchType = "tracks" | "albums" | "artists";
 type CatalogItem = {
   id: string;
@@ -23,6 +24,7 @@ const props = defineProps<{
   downloadRetentionHours?: number;
   qualities: Record<string, string>;
 }>();
+const formatSettings = defineModel<Record<string, Record<string, string | number>>>("formatSettings", { required: true });
 const outputFormat = defineModel<string>("outputFormat", { required: true });
 const quality = defineModel<string>("quality", { required: true });
 const retention = defineModel<number>("retentionHours", { required: true });
@@ -141,7 +143,7 @@ async function addSelected() {
   const target = state.value;
   if (!target.selected.length || busy.value || props.disabled) return;
   const ids = [...target.selected];
-  const options = { outputFormat: outputFormat.value, quality: quality.value, retentionHours: retention.value, retentionMode: retentionMode.value, downloadLimit: downloadLimit.value, lyrics: lyrics.value };
+  const options = { outputFormat: outputFormat.value, formatOptions: normalizeFormatOptions(outputFormat.value, formatSettings.value[outputFormat.value] || {}), quality: quality.value, retentionHours: retention.value, retentionMode: retentionMode.value, downloadLimit: downloadLimit.value, lyrics: lyrics.value };
   adding.value = true;
   added.value = 0;
   target.error = target.notice = "";
@@ -306,7 +308,7 @@ async function addSelected() {
           v-if="state.items.some((item) => item.streamable)"
           class="catalog-download-options"
         >
-          <OutputFormat prefix="search" v-model="outputFormat" :disabled="busy" />
+          <OutputFormat prefix="search" v-model="outputFormat" v-model:settings="formatSettings" :disabled="busy" />
           <div class="form-options">
             <div class="field">
               <label for="search-quality">Качество</label

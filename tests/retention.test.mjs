@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { DownloadQueue } from '../server/utils/queue.mjs';
 import { loadDefaults, saveDefaults } from '../server/utils/app-settings.mjs';
 import { archiveExpiration } from '../server/utils/retention.mjs';
-import { validateOutputFormat, audioFormats } from '../shared/audio-formats.mjs';
+import { validateOutputFormat, audioFormats, normalizeFormatOptions } from '../shared/audio-formats.mjs';
 import { uploadRequest } from '../server/utils/uploads.mjs';
 
 test('defaults persist atomically, use environment fallbacks and reject unsafe/unexpected values', async () => {
@@ -110,4 +110,13 @@ test('output formats have a fixed allowlist and original is the backwards-compat
   for (const format of Object.keys(audioFormats)) assert.equal(validateOutputFormat(format), format);
   for (const value of ['__proto__', 'constructor', 'mp3;touch /tmp/not-allowed', 'flac', {}, [], 1, null])
     assert.throws(() => validateOutputFormat(value));
+});
+
+test('format options are canonical snapshots with strict codec-specific bounds', () => {
+  assert.deepEqual(normalizeFormatOptions('original'), {});
+  assert.deepEqual(normalizeFormatOptions('mp3', { bitrate:128 }), {mode:'cbr',bitrate:128,quality:2,sampleRate:48000});
+  for (const [format, options] of [['mp3',{bitrate:'128'}],['mp3',{bitDepth:24}],['opus',{compression:11}],
+    ['alac',{bitrate:128}],['alac',{bitDepth:32}],['ape',{compression:9999}],['dsd',{dsdRate:9999999}],
+    ['original',{bitrate:128}],['tta',{sampleRate:NaN}],['tta',{extra_args:'-y'}],['mp3',null],['mp3',[]]])
+    assert.throws(() => normalizeFormatOptions(format, options));
 });
