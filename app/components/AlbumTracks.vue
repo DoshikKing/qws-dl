@@ -109,14 +109,14 @@ watch(() => props.status, load);
 </template>
 
 <style scoped>
-.album-tracks { margin-top: 10px; }
+.album-tracks { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .tracks-toggle .app-icon { transition: transform 240ms ease; }
 .tracks-toggle .expanded { transform: rotate(90deg); }
 .album-track-list { list-style: none; padding: 0; margin: 12px 0 0; }
-.album-track { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.album-track { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); }
 .track-number { color: var(--secondary); font-size: 12px; }
 .track-description { min-width: 0; display: grid; gap: 4px; overflow-wrap: anywhere; }
-.track-description strong { font-size: 13px; }
+.track-description strong { font-size: 14px; font-weight: 500; }
 .track-description span { font-size: 12px; color: var(--secondary); }
 .track-state [data-status="failed"],
 .track-state [data-status="not_downloaded"] { color: var(--danger); }

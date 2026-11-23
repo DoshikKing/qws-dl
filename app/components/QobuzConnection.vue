@@ -17,9 +17,9 @@ async function connect() {
 </script>
 
 <template>
-  <div class="panel" style="padding: 20px; margin-bottom: 16px">
+  <div class="panel" style="padding: 24px; margin-bottom: 16px">
 
-      <p class="section-note" style="margin-top: 0">
+      <p class="section-note" style="margin: 0 0 16px">
         Введите email и пароль на сайте Qobuz. После входа вы вернётесь сюда.
       </p>
       <button class="primary-button" type="button" :disabled="busy" @click="connect">

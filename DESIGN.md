@@ -25,9 +25,10 @@ Reference: https://developer.apple.com/design/human-interface-guidelines/
 - Controls need at least 44 × 44 CSS pixels of usable target area, visible keyboard
   focus, associated labels, and sufficient contrast. Use 16px or larger mobile inputs.
 - Layouts must work at 320px width, with long names and translated error messages.
-- Authentication uses the existing animated gradient. Keep forms compact: invite
-  code first, then registration; existing users can switch to login. No promotional
-  explanations. Never display passwords or put invitation codes in URL parameters.
+- Authentication uses the same quiet neutral surfaces as the application, with the
+  record mark and a compact labelled invitation form. Invite code comes first, then
+  registration; existing users can switch to login. Never display passwords or put
+  invitation codes in URL parameters.
 
 Completed downloads are offered as ZIP archives; source tracks are temporary worker output.
 Administrator storage management must identify the archive and its owner before deletion.
@@ -56,3 +57,20 @@ short success or retry message without codes, tokens, or provider response bodie
 Build and type-check UI changes. Exercise affected flows in a browser, including
 keyboard access, errors, mobile widths, dark mode, and reduced motion. Account or
 permission changes additionally need API tests: hiding a button is not access control.
+
+## Music workspace direction
+
+The November 2026 rebuild applies Taste Skill for composition and Unslop for audit
+and refinement. QWS is an authenticated music workspace, so retain its Vue flows,
+sidebar and mobile bottom navigation rather than importing marketing-page layouts.
+Use a neutral paper/graphite palette with one blue action accent, system typography
+at weights 400–500, a 4px spacing rhythm, 8px controls and 12px panels. The flat
+record mark is the signature; actual catalog artwork supplies visual richness.
+Keep labels, account roles and status meanings explicit. Queue filters separate all,
+active and failed tasks without modifying their order or ownership. Preserve 44px
+tap targets, per-track failures, partial-album warnings, ZIP actions and disclosures.
+No generated imagery, external fonts, shader backgrounds or new UI dependencies.
+
+Workflow references: [Taste Skill](https://github.com/Leonxlnx/taste-skill) by
+Leonxlnx (MIT) and [Unslop](https://github.com/heydamir/unslop) by
+Damir Sokolovsky / @heydamir (CC BY 4.0).

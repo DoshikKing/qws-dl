@@ -75,12 +75,15 @@ async function submit() {
         aria-label="Приглашение"
         @submit.prevent="submit"
       >
+        <div class="auth-intro"><h1>Ваша музыкальная библиотека</h1><p>Введите код приглашения, чтобы создать аккаунт</p></div>
+        <label class="invite-label" for="invitation-code">Код приглашения</label>
         <div
           class="password-control"
           :class="{ 'has-error': failure || error }"
         >
           <AppIcon name="key" />
           <input
+            id="invitation-code"
             v-model="code"
             aria-label="Код приглашения"
             :aria-invalid="Boolean(failure)"

@@ -75,6 +75,22 @@ const activeJobs = computed(() =>
     ["queued", "uploading", "running", "archiving"].includes(job.status),
   ),
 );
+const queueFilter = ref('all');
+const queueFilters = [
+  { id: 'all', label: 'Все задания' },
+  { id: 'active', label: 'В работе' },
+  { id: 'errors', label: 'С ошибками' },
+];
+const visibleJobs = computed(() => jobs.value.filter(job => queueFilter.value === 'all' ||
+  (queueFilter.value === 'active' ? ['queued', 'uploading', 'running', 'archiving'].includes(job.status) : job.status === 'failed' || !!job.archiveError)));
+const descriptions: Record<string, string> = {
+  queue: 'Загрузка треков и альбомов Qobuz в выбранном качестве.',
+  library: 'ZIP-архивы ваших загрузок и время их хранения.',
+  lyrics: 'Текст песни в тегах аудиофайла и рядом в формате .lrc.',
+  settings: 'Аккаунт, приглашения и подключение к Qobuz.',
+  users: 'Аккаунты, приглашения и доступ к сервису.',
+  storage: 'Архивы всех пользователей и управление хранением.',
+};
 const availableArchives = computed(() =>
   jobs.value.filter(
     (job) =>
@@ -160,6 +176,7 @@ function clearAccount() {
   sessionGeneration++;
   url.value = "";
   selectedJob.value = null;
+  queueFilter.value = 'all';
   authenticated.value = false;
   account.value = null;
   jobs.value = [];
@@ -247,19 +264,21 @@ onBeforeUnmount(() => clearInterval(timer));
       <span role="status">Загрузка…</span>
     </main>
     <main v-else-if="!authenticated" key="login" class="login-screen">
-      <div class="login-background" aria-hidden="true"><i /><i /><i /></div>
+      <div class="auth-shell">
+        <div class="auth-brand"><span class="app-mark record-mark" aria-hidden="true" /><span>QWS<small>Загрузки и архивы</small></span></div>
       <AuthScreen
         :checking="checking"
         :error="error"
         @authenticated="enterAccount"
       />
+      </div>
     </main>
 
     <div v-else key="application" class="app-shell">
+      <a class="skip-link" href="#main-content">К содержимому</a>
       <aside class="sidebar">
         <a class="app-identity" :href="baseURL" aria-label="QWS — главная">
-          <span class="app-mark"><AppIcon name="download" /></span
-          ><span>QWS<small>OrpheusDL</small></span>
+          <span class="app-mark record-mark" aria-hidden="true" /><span>QWS<small>Музыкальная библиотека</small></span>
         </a>
         <nav
           class="navigation"
@@ -270,7 +289,7 @@ onBeforeUnmount(() => clearInterval(timer));
             v-for="view in views"
             :key="view.id"
             type="button"
-            :class="{ selected: tab === view.id }"
+            :class="{ selected: tab === view.id, 'admin-nav-start': view.id === 'users' }"
             :aria-current="tab === view.id ? 'page' : undefined"
             :aria-label="view.label"
             @click="tab = view.id"
@@ -293,17 +312,18 @@ onBeforeUnmount(() => clearInterval(timer));
         </nav>
       </aside>
 
-      <main class="main-content">
+      <main id="main-content" class="main-content" tabindex="-1">
         <header class="toolbar">
-          <span class="toolbar-title">QWS</span
-          ><span class="toolbar-service">{{ account?.username }}</span
+          <span class="toolbar-title"><AppIcon name="music" />Музыкальная библиотека</span>
+          <span class="account-avatar" aria-hidden="true">{{ account?.username.slice(0, 1).toUpperCase() }}</span>
+          <span class="toolbar-service">{{ account?.username }}<small>{{ account?.role === 'admin' ? 'Администратор' : 'Пользователь' }}</small></span
           ><button type="button" class="toolbar-button" @click="logout">
             <AppIcon name="logout" /><span>Выйти</span>
           </button>
         </header>
         <div class="content">
           <div class="page-heading">
-            <h1>{{ pageTitle }}</h1>
+            <div><h1>{{ pageTitle }}</h1><p class="page-description">{{ descriptions[tab] }}</p></div>
             <span
               v-if="tab === 'queue' && activeJobs.length"
               class="heading-detail"
@@ -455,6 +475,9 @@ onBeforeUnmount(() => clearInterval(timer));
                         Задания <span class="item-count">{{ jobs.length }}</span>
                       </h2>
                     </div>
+                    <div v-if="jobs.length" class="queue-filters" role="group" aria-label="Фильтр заданий">
+                      <button v-for="filter in queueFilters" :key="filter.id" type="button" :aria-pressed="queueFilter === filter.id" @click="queueFilter = filter.id">{{ filter.label }}</button>
+                    </div>
                     <div v-if="!jobs.length" class="empty-state">
                       <AppIcon name="queue" />
                       <h3>Заданий нет</h3>
@@ -466,6 +489,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         }}
                       </p>
                     </div>
+                    <p v-else-if="!visibleJobs.length" class="queue-filter-empty" role="status">{{ queueFilter === 'active' ? 'Сейчас нет заданий в работе' : 'Заданий с ошибками нет' }}</p>
                     <TransitionGroup
                       v-else
                       name="rows"
@@ -473,7 +497,7 @@ onBeforeUnmount(() => clearInterval(timer));
                       class="panel job-list"
                     >
                       <article
-                        v-for="job in jobs"
+                        v-for="job in visibleJobs"
                         :key="job.id"
                         class="job"
                         :data-status="job.status"
