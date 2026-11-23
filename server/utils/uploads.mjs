@@ -1,3 +1,4 @@
+import { retentionPolicy } from './retention.mjs';
 export const uploadLimit = 100 * 1024 * 1024;
 export function uploadRequest(headers) {
   const decode = (name) => {
@@ -11,13 +12,15 @@ export function uploadRequest(headers) {
   const filename = decode("x-file-name");
   if (!filename || Buffer.byteLength(filename) > 240 || /[/\\]/.test(filename) || filename.startsWith(".") || !/\.(flac|mp3|m4a|ogg|opus)$/i.test(filename))
     throw Object.assign(new Error("Выберите FLAC, MP3, M4A, Ogg или Opus с именем до 240 байт."), { statusCode: 400 });
-  const retentionHours = Number(headers["x-retention-hours"]);
-  if (!Number.isInteger(retentionHours) || retentionHours < 1 || retentionHours > 5)
-    throw Object.assign(new Error("Срок хранения: целое число от 1 до 5 часов."), { statusCode: 400 });
+  const retentionMode = headers["x-retention-mode"] ?? "time";
+  const retentionHours = Number(headers["x-retention-hours"] ?? (retentionMode === "downloads" ? 5 : NaN));
+  const downloadLimit = Number(headers["x-download-limit"] ?? 1);
+  try { retentionPolicy(retentionMode, retentionHours, downloadLimit, 5); }
+  catch (error) { throw Object.assign(error, { statusCode: 400 }); }
   if (!/^application\/octet-stream(?:\s*;|$)/i.test(headers["content-type"] || ""))
     throw Object.assign(new Error("Ожидается аудиофайл."), { statusCode: 415 });
   const length = headers["content-length"];
   if (length !== undefined && (!/^\d+$/.test(length) || Number(length) > uploadLimit))
     throw Object.assign(new Error("Файл должен быть не больше 100 МиБ."), { statusCode: 413 });
-  return { filename, retentionHours, metadata: { artist: decode("x-artist"), title: decode("x-title"), album: decode("x-album") } };
+  return { filename, retentionHours, retentionMode, downloadLimit, metadata: { artist: decode("x-artist"), title: decode("x-title"), album: decode("x-album") } };
 }

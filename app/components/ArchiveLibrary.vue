@@ -7,7 +7,8 @@ type Archive = {
   status: string;
   downloadWarning?: boolean;
   archiveError: string | null;
-  expiresAt: string;
+  expiresAt: string | null;
+  retentionMode?: string; downloadLimit?: number; downloadCount?: number;
   owner?: string;
 };
 const props = defineProps<{ management?: boolean }>();
@@ -124,7 +125,7 @@ async function retry(file: Archive) {
       {{
         management
           ? "Архивы всех пользователей. Удаление освободит место; история загрузок сохранится."
-          : "Срок хранения — до 24 часов после завершения загрузки."
+          : "Архивы удаляются по выбранному сроку или после заданного числа скачиваний."
       }}
     </p>
     <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
@@ -174,7 +175,7 @@ async function retry(file: Archive) {
                       : file.archiveError
                         ? "Ошибка архивации"
                         : size(file.size)
-                  }}<span>·</span>До {{ date(file.expiresAt) }}
+                  }}<span>·</span><ArchiveRetention :job="file" />
                 </p>
                 <p v-if="file.downloadWarning" class="archive-warning"><AppIcon name="alert" />Загружено с ошибками</p>
                 <p v-if="file.archiveError" class="form-error" role="status">

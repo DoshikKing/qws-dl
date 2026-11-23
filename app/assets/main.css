@@ -364,7 +364,7 @@ code {
 }
 .form-options {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(100px, .7fr) auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 1.4fr) auto;
   align-items: end;
   gap: 16px;
   margin-top: 20px;
@@ -900,7 +900,7 @@ a.item-title:hover {
     padding: 23px;
   }
   .form-options {
-    grid-template-columns: minmax(0, 1.6fr) minmax(80px, 0.7fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
     gap: 14px;
   }
   .primary-button {

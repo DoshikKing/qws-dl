@@ -1,3 +1,4 @@
+import { loadDefaults } from '../utils/app-settings.mjs';
 import { mkdir, open } from "node:fs/promises";
 import { join } from "node:path";
 import { getQueue } from "../utils/queue.mjs";
@@ -17,8 +18,10 @@ export default defineEventHandler(async (event) => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   receiving.add(user.id);
   try {
-    const input = uploadRequest(getHeaders(event));
-    job = queue.addUpload(input.filename, input.retentionHours, user.id, input.metadata);
+    const defaults = loadDefaults(queue.settings);
+    const input = uploadRequest({ 'x-retention-mode': defaults.retentionMode,
+      'x-retention-hours': String(Math.min(defaults.retentionHours, 5)), 'x-download-limit': String(defaults.downloadLimit), ...getHeaders(event) });
+    job = queue.addUpload(input.filename, input.retentionHours, user.id, input.metadata, input);
     const folder = queue.folder(job);
     await mkdir(folder, { mode: 0o700 });
     handle = await open(join(folder, input.filename), "wx", 0o600);

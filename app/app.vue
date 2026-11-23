@@ -10,7 +10,11 @@ type Job = {
   log: string;
   error?: string;
   retentionHours: number;
-  expiresAt?: string;
+  retentionMode?: string;
+  downloadLimit?: number;
+  downloadCount?: number;
+  lyrics?: boolean;
+  expiresAt?: string | null;
   expiredAt?: string;
   deletedAt?: string;
   archiveError?: string;
@@ -25,6 +29,10 @@ type Status = {
   ready: boolean;
   quality: string;
   retentionHours: number;
+  retentionMode?: string;
+  downloadLimit?: number;
+  downloadCount?: number;
+  lyrics?: boolean;
   oauthConnected: boolean;
   sessionNeedsLogin: boolean;
   lastRefreshedAt: string | null;
@@ -65,6 +73,8 @@ const url = ref("");
 const inputMode = ref<"link" | "search">("link");
 const quality = ref("hifi");
 const retentionHours = ref(24);
+const retentionMode = ref('time');
+const downloadLimit = ref(1);
 const lyrics = ref(false);
 const status = ref<Status | null>(null);
 const qobuzResult = ref('');
@@ -98,8 +108,7 @@ const availableArchives = computed(() =>
       !["running", "queued", "archiving"].includes(job.status) &&
       !job.expiredAt &&
       !job.deletedAt &&
-      job.expiresAt &&
-      Date.parse(job.expiresAt) > Date.now(),
+      (job.retentionMode === 'downloads' ? (job.downloadCount || 0) < (job.downloadLimit || 1) : job.expiresAt && Date.parse(job.expiresAt) > Date.now()),
   ),
 );
 const mediaTypes: Record<string, string> = {
@@ -153,11 +162,17 @@ async function refresh() {
       api<Job[]>("/api/jobs"),
     ]);
     if (generation !== sessionGeneration) return;
+    const previous = status.value;
+    const useDefaults = entering || (previous && quality.value === previous.quality && retentionHours.value === previous.retentionHours &&
+      retentionMode.value === (previous.retentionMode || 'time') && downloadLimit.value === (previous.downloadLimit || 1) && lyrics.value === (previous.lyrics === true));
     status.value = state;
     jobs.value = queue;
-    if (entering) {
+    if (useDefaults) {
       quality.value = state.quality;
       retentionHours.value = state.retentionHours;
+      retentionMode.value = state.retentionMode || 'time';
+      downloadLimit.value = state.downloadLimit || 1;
+      lyrics.value = state.lyrics === true;
     }
     error.value = "";
   } catch (e: any) {
@@ -167,6 +182,15 @@ async function refresh() {
   } finally {
     checking.value = false;
   }
+}
+async function defaultsSaved() {
+  await refresh();
+  if (!status.value) return;
+  quality.value = status.value.quality;
+  retentionHours.value = status.value.retentionHours;
+  retentionMode.value = status.value.retentionMode || 'time';
+  downloadLimit.value = status.value.downloadLimit || 1;
+  lyrics.value = status.value.lyrics === true;
 }
 async function enterAccount() {
   sessionGeneration++;
@@ -201,6 +225,7 @@ async function addJob() {
         url: url.value,
         quality: quality.value,
         retentionHours: retentionHours.value,
+        retentionMode: retentionMode.value, downloadLimit: downloadLimit.value,
         lyrics: lyrics.value,
       },
     });
@@ -424,18 +449,7 @@ onBeforeUnmount(() => clearInterval(timer));
                             </option>
                           </select>
                         </div>
-                        <div class="field">
-                          <label for="retention">Хранить файлы</label
-                          ><select id="retention" v-model.number="retentionHours">
-                            <option
-                              v-for="hours in 24"
-                              :key="hours"
-                              :value="hours"
-                            >
-                              {{ hours }} ч
-                            </option>
-                          </select>
-                        </div>
+                        <RetentionOptions prefix="retention" v-model:mode="retentionMode" v-model:hours="retentionHours" v-model:downloads="downloadLimit" :disabled="busy" />
                         <button
                           class="primary-button"
                           :disabled="busy || !status?.ready"
@@ -454,8 +468,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         <span>Добавлять тексты песен<span class="field-note">Синхронизированный текст и файл .lrc, если найдены.</span></span>
                       </label>
                       <p class="field-note">
-                        ZIP удалится через {{ retentionHours }} ч после
-                        завершения.
+                        {{ retentionMode === 'downloads' ? `ZIP хранится без ограничения по времени и удалится после ${downloadLimit} скачиваний.` : `ZIP удалится через ${retentionHours} ч после завершения.` }}
                       </p>
                     </form>
                     <QobuzSearch
@@ -463,6 +476,8 @@ onBeforeUnmount(() => clearInterval(timer));
                       v-model:lyrics="lyrics"
                       v-model:quality="quality"
                       v-model:retention-hours="retentionHours"
+                      v-model:retention-mode="retentionMode"
+                      v-model:download-limit="downloadLimit"
                       :qualities="qualities"
                       :disabled="!status?.ready"
                       @queued="refresh"
@@ -600,17 +615,7 @@ onBeforeUnmount(() => clearInterval(timer));
                             </button>
                           </div>
                         </div>
-                        <p class="job-retention">
-                          {{
-                            job.deletedAt
-                              ? "Удалено администратором"
-                              : job.expiredAt
-                                ? "Архив удалён"
-                                : job.expiresAt
-                                  ? `Доступны до ${date(job.expiresAt)}`
-                                  : `Хранение после завершения: ${job.retentionHours} ч`
-                          }}
-                        </p>
+                        <p class="job-retention"><ArchiveRetention :job="job" /></p>
                         <p v-if="job.cleanupError" class="job-error" role="alert">
                           {{ job.cleanupError }}
                         </p>
@@ -636,6 +641,7 @@ onBeforeUnmount(() => clearInterval(timer));
                 <LyricsUpload
                   v-else-if="tab === 'lyrics'"
                   :jobs="jobs.filter(job => job.kind === 'lyrics-upload')"
+                  :default-mode="status?.retentionMode || 'time'" :default-downloads="status?.downloadLimit || 1" :default-hours="Math.min(status?.retentionHours || 1, 5)"
                   @changed="refresh"
                 />
                 <ArchiveLibrary
@@ -690,33 +696,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         Установка: <code>npm run setup:orpheus</code>.
                       </p>
                     </section>
-                    <section class="section" aria-labelledby="download-settings">
-                      <div class="section-heading">
-                        <h2 id="download-settings">Загрузки</h2>
-                      </div>
-                      <div class="panel settings-list">
-                        <div class="setting-row">
-                          <span>Качество по умолчанию</span
-                          ><span class="setting-value">{{
-                            qualities[status?.quality || "hifi"]
-                          }}</span>
-                        </div>
-                        <div class="setting-row">
-                          <span>Срок хранения по умолчанию</span
-                          ><span class="setting-value"
-                            >{{ status?.retentionHours || 24 }} ч</span
-                          >
-                        </div>
-                        <div class="setting-row">
-                          <span>Обработка заданий</span
-                          ><span class="setting-value">По одному</span>
-                        </div>
-                      </div>
-                      <p class="section-note">
-                        ZIP удаляется по истечении выбранного срока. История
-                        заданий сохраняется.
-                      </p>
-                    </section>
+                    <AppDefaults @saved="defaultsSaved" />
                   </template>
                 </template>
               </div>

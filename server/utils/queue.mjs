@@ -11,6 +11,8 @@ import {
   lstatSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
+import { retentionPolicy, archiveExpiration } from './retention.mjs';
+import { loadDefaults } from './app-settings.mjs';
 import { prepareArchive } from "./archive.mjs";
 import { qobuzEnvironment, workerEnvironment, readQobuzSession, retiredQobuzVariables } from "./qobuz-session.mjs";
 import { takeLimit } from "./rate-limit.mjs";
@@ -99,11 +101,10 @@ export function readiness(settings = config()) {
     installed,
     missing,
     ready: installed && missing.length === 0,
-    quality: settings.quality,
+    ...loadDefaults(settings),
     oauthConnected,
     sessionNeedsLogin: !!session?.needsLogin,
     lastRefreshedAt: session?.updatedAt || null,
-    retentionHours: settings.retentionHours || 24,
   };
 }
 
@@ -130,6 +131,7 @@ export function redact(text, privateValues = []) {
 export class DownloadQueue {
   constructor(settings = config()) {
     this.settings = settings;
+    this.archiveTransfers = new Map();
     mkdirSync(settings.data, { recursive: true, mode: 0o700 });
     mkdirSync(settings.downloads, { recursive: true });
     this.file = join(settings.data, "jobs.json");
@@ -145,6 +147,9 @@ export class DownloadQueue {
         job.finishedAt = new Date().toISOString();
         if (job.kind === "lyrics-upload") rmSync(this.folder(job), { recursive: true, force: true });
       }
+      job.retentionMode ||= 'time';
+      job.downloadLimit ||= 1;
+      job.downloadCount ||= 0;
       this.readTrackMetadata(job);
       job.title ||= this.readTitle(job);
       try { job.sizeBytes = folderBytes(this.folder(job)); }
@@ -154,13 +159,9 @@ export class DownloadQueue {
         Math.max(1, Number(job.retentionHours) || 24),
       );
       if (!["running", "queued", "uploading"].includes(job.status)) {
-        job.expiresAt ||= new Date(
-          Date.parse(
-            job.finishedAt || job.createdAt || new Date().toISOString(),
-          ) +
-            job.retentionHours * 3600_000,
-        ).toISOString();
+        job.expiresAt ||= archiveExpiration(job);
         job.hasFiles = !job.expiredAt && !job.deletedAt && this.hasArchive(job);
+        if (job.retentionMode === "downloads" && !job.hasFiles && !this.hasFiles(job) && !job.archiveError && job.status !== "archiving") job.expiresAt ||= job.finishedAt || job.createdAt;
         if (
           !this.expired(job) &&
           !job.deletedAt &&
@@ -204,27 +205,23 @@ export class DownloadQueue {
     retentionHours = this.settings.retentionHours || 24,
     userId = null,
     lyrics = false,
+    retention = {},
   ) {
     if (typeof lyrics !== "boolean") throw new Error("Параметр текстов должен быть логическим значением.");
     url = normalizeUrl(url);
     if (!qualities.includes(quality)) throw new Error("Неизвестное качество.");
-    return this.enqueue({ url, quality, retentionHours, userId, lyrics });
+    return this.enqueue({ url, quality, ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit), userId, lyrics });
   }
 
-  addUpload(filename, retentionHours, userId, metadata = {}) {
+  addUpload(filename, retentionHours, userId, metadata = {}, retention = {}) {
     if (!Number.isInteger(retentionHours) || retentionHours < 1 || retentionHours > 5)
       throw new Error("Срок хранения: целое число от 1 до 5 часов.");
-    return this.enqueue({ url: "", quality: "", retentionHours, userId, lyrics: true,
+    return this.enqueue({ url: "", quality: "", ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit, 5), userId, lyrics: true,
       kind: "lyrics-upload", filename, title: filename, metadata, status: "uploading" });
   }
 
-  enqueue({ url, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, parentJobId, parentTrackId, status = "queued" }) {
-    if (
-      !Number.isInteger(retentionHours) ||
-      retentionHours < 1 ||
-      retentionHours > 24
-    )
-      throw new Error("Срок хранения: целое число от 1 до 24 часов.");
+  enqueue({ url, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, parentJobId, parentTrackId, retentionMode = "time", downloadLimit = 1, status = "queued" }) {
+    retentionPolicy(retentionMode, retentionHours, downloadLimit);
     const own = this.jobs.filter((job) => job.userId === userId && !this.expired(job));
     const pending = (job) => ["queued", "uploading", "running", "archiving"].includes(job.status);
     if (userId && (own.filter(pending).length >= (this.settings.maxUserJobs ?? 10) || own.length >= 200))
@@ -253,7 +250,7 @@ export class DownloadQueue {
       createdAt: new Date().toISOString(),
       log: "",
       error: null,
-      retentionHours,
+      retentionHours, retentionMode, downloadLimit, downloadCount: 0,
       expiresAt: null,
       expiredAt: null,
       hasFiles: false,
@@ -290,14 +287,13 @@ export class DownloadQueue {
     if (!["queued", "uploading", "running"].includes(job.status)) return true;
     job.status = "cancelled";
     job.finishedAt = new Date().toISOString();
-    job.expiresAt = new Date(
-      Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
-    ).toISOString();
+    job.expiresAt = archiveExpiration(job);
     if (this.active?.job.id === id) this.kill();
     else if (job.kind === "lyrics-upload") {
       rmSync(this.folder(job), { recursive: true, force: true });
       job.sizeBytes = 0;
     }
+    if (job.retentionMode === "downloads" && this.active?.job.id !== id && !this.hasFiles(job)) job.expiresAt = job.finishedAt;
     this.save();
     this.scheduleCleanup();
     return true;
@@ -347,9 +343,8 @@ export class DownloadQueue {
         ? "Установите OrpheusDL: npm run setup:orpheus"
         : "Войдите в Qobuz через Настройки → Qobuz.");
       job.finishedAt = new Date().toISOString();
-      job.expiresAt = new Date(
-        Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
-      ).toISOString();
+      job.expiresAt = archiveExpiration(job);
+      if (job.retentionMode === "downloads") job.expiresAt = job.finishedAt;
       if (upload) {
         rmSync(this.folder(job), { recursive: true, force: true });
         job.sizeBytes = 0;
@@ -459,9 +454,7 @@ export class DownloadQueue {
       }
       if (upload && job.status !== "completed") rmSync(folder, { recursive: true, force: true });
       job.finishedAt = new Date().toISOString();
-      job.expiresAt = new Date(
-        Date.parse(job.finishedAt) + job.retentionHours * 3600_000,
-      ).toISOString();
+      job.expiresAt = archiveExpiration(job);
       this.readTrackMetadata(job);
       job.title ||= this.readTitle(job);
       job.downloadStatus = job.status;
@@ -489,6 +482,7 @@ export class DownloadQueue {
       job.hasFiles =
         !this.expired(job) && this.hasArchive(job) && !job.archiveError;
       job.sizeBytes = folderBytes(this.folder(job));
+      if (job.retentionMode === "downloads" && !job.hasFiles && !job.archiveError) job.expiresAt = job.finishedAt;
       this.active = null;
       this.save();
       this.cleanupExpired();
@@ -599,7 +593,7 @@ export class DownloadQueue {
       ['queued', 'running', 'archiving'].includes(item.status));
     if (pending) return pending;
     return this.enqueue({ url: `https://open.qobuz.com/track/${track.id}`, quality: job.quality,
-      retentionHours: job.retentionHours, lyrics: job.lyrics === true, userId: user.id,
+      retentionHours: job.retentionHours, retentionMode: job.retentionMode, downloadLimit: job.downloadLimit, lyrics: job.lyrics === true, userId: user.id,
       title: track.artist ? `${track.artist} - ${track.title}` : track.title,
       parentJobId: job.id, parentTrackId: track.id });
   }
@@ -659,10 +653,34 @@ export class DownloadQueue {
     }
   }
 
+  reserveArchive(job) {
+    if (this.expired(job)) throw Object.assign(new Error('Архив удалён.'), { statusCode: 410 });
+    if (job.retentionMode !== 'downloads') return () => {};
+    const reserved = this.archiveTransfers.get(job.id) || 0;
+    if (job.downloadCount + reserved >= job.downloadLimit)
+      throw Object.assign(new Error('Оставшиеся скачивания уже выполняются. Повторите позже.'), { statusCode: 409 });
+    this.archiveTransfers.set(job.id, reserved + 1);
+    let released = false;
+    return (success) => {
+      if (released) return;
+      released = true;
+      const remaining = (this.archiveTransfers.get(job.id) || 1) - 1;
+      if (remaining) this.archiveTransfers.set(job.id, remaining);
+      else this.archiveTransfers.delete(job.id);
+      if (success) {
+        job.downloadCount++;
+        this.save();
+        this.cleanupExpired();
+        this.scheduleCleanup();
+      }
+    };
+  }
+
   expired(job, now = Date.now()) {
     return Boolean(
       job.deletedAt ||
       job.expiredAt ||
+      (job.retentionMode === "downloads" && job.downloadCount >= job.downloadLimit) ||
       (job.expiresAt && Date.parse(job.expiresAt) <= now),
     );
   }
@@ -729,7 +747,7 @@ export class DownloadQueue {
     const times = this.jobs
       .filter(
         (job) =>
-          job.expiresAt &&
+          (job.expiresAt || job.cleanupError) &&
           !job.expiredAt &&
           !job.deletedAt &&
           !["running", "queued", "uploading", "archiving"].includes(job.status),

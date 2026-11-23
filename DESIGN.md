@@ -74,3 +74,9 @@ No generated imagery, external fonts, shader backgrounds or new UI dependencies.
 Workflow references: [Taste Skill](https://github.com/Leonxlnx/taste-skill) by
 Leonxlnx (MIT) and [Unslop](https://github.com/heydamir/unslop) by
 Damir Sokolovsky / @heydamir (CC BY 4.0).
+
+Archive retention offers two labelled choices: time or completed download count.
+Show the applicable value next to the mode and the remaining count beside a counted
+archive; never display a fictional expiry date. Administrator defaults use the same
+controls with explicit Save, loading, error and confirmation states. Preserve user
+choices in open forms when global defaults change.

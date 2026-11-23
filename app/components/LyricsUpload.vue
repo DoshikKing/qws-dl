@@ -1,15 +1,24 @@
 <script setup lang="ts">
 type UploadJob = {
+  retentionMode?: string; downloadLimit?: number; downloadCount?: number;
   id: string; title?: string | null; status: string; error?: string | null;
   archiveError?: string | null;
   log: string; hasFiles: boolean; expiresAt?: string | null; expiredAt?: string | null; deletedAt?: string | null;
 };
-const props = defineProps<{ jobs: UploadJob[] }>();
+const props = defineProps<{ jobs: UploadJob[]; defaultMode?: string; defaultDownloads?: number; defaultHours?: number }>();
 const emit = defineEmits<{ changed: [] }>();
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/?$/, "/");
 const api = $fetch.create({ baseURL });
 const file = ref<File | null>(null);
-const retention = ref(1);
+const retention = ref(Math.min(props.defaultHours || 1, 5));
+const retentionMode = ref(props.defaultMode || 'time');
+const downloadLimit = ref(props.defaultDownloads || 1);
+watch(() => [props.defaultMode || 'time', props.defaultDownloads || 1, Math.min(props.defaultHours || 1, 5)] as const,
+  ([mode, downloads, hours], [oldMode, oldDownloads, oldHours]) => {
+    if (retentionMode.value === oldMode && downloadLimit.value === oldDownloads && retention.value === oldHours) {
+      retentionMode.value = mode; downloadLimit.value = downloads; retention.value = hours;
+    }
+  });
 const artist = ref("");
 const title = ref("");
 const album = ref("");
@@ -43,6 +52,8 @@ async function upload() {
         "Content-Type": "application/octet-stream",
         "X-File-Name": encodeURIComponent(file.value.name),
         "X-Retention-Hours": String(retention.value),
+        "X-Retention-Mode": retentionMode.value,
+        "X-Download-Limit": String(downloadLimit.value),
         "X-Artist": encodeURIComponent(artist.value.trim()),
         "X-Title": encodeURIComponent(title.value.trim()),
         "X-Album": encodeURIComponent(album.value.trim()),
@@ -60,7 +71,7 @@ async function upload() {
   }
 }
 const available = (job: UploadJob) => job.hasFiles && !job.expiredAt && !job.deletedAt &&
-  !!job.expiresAt && Date.parse(job.expiresAt) > Date.now();
+  (job.retentionMode === 'downloads' ? (job.downloadCount || 0) < (job.downloadLimit || 1) : !!job.expiresAt && Date.parse(job.expiresAt) > Date.now());
 const expires = (value: string) => new Date(value).toLocaleString("ru-RU");
 </script>
 <template>
@@ -82,17 +93,13 @@ const expires = (value: string) => new Date(value).toLocaleString("ru-RU");
       <div class="field"><label for="lyrics-album">Альбом</label><input id="lyrics-album" v-model="album" maxlength="500" :disabled="busy" /></div>
       </details>
       <div class="form-options">
-        <div class="field"><label for="lyrics-retention">Хранить архив</label>
-          <select id="lyrics-retention" v-model.number="retention" :disabled="busy">
-            <option v-for="hours in 5" :key="hours" :value="hours">{{ hours }} ч</option>
-          </select>
-        </div>
+        <RetentionOptions prefix="lyrics-retention" v-model:mode="retentionMode" v-model:hours="retention" v-model:downloads="downloadLimit" :max-hours="5" :disabled="busy" />
         <button class="primary-button" :disabled="busy || !file">
           <span v-if="busy" class="spinner" aria-hidden="true" /><AppIcon v-else name="music" />
           {{ busy ? "Загрузка файла…" : "Найти и добавить текст" }}
         </button>
       </div>
-      <p class="field-note">После обработки оригинал на сервере удаляется. ZIP удалится через {{ retention }} ч после завершения.</p>
+      <p class="field-note">После обработки оригинал на сервере удаляется. {{ retentionMode === 'downloads' ? `ZIP хранится до ${downloadLimit} скачиваний.` : `ZIP удалится через ${retention} ч после завершения.` }}</p>
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
       <p v-if="notice" class="form-success" role="status">{{ notice }}</p>
     </form>
@@ -105,7 +112,7 @@ const expires = (value: string) => new Date(value).toLocaleString("ru-RU");
       <p class="item-meta" role="status">{{ job.expiredAt || job.deletedAt ? "Файлы удалены" : job.archiveError ? 'Ошибка архивации' : labels[job.status] || job.status }}</p>
       <p v-if="job.error || job.archiveError" class="form-error" role="status">{{ job.error || job.archiveError }}</p>
       <template v-if="available(job)">
-        <p class="field-note">{{ job.log.includes('без временных меток') ? 'Обычный текст без синхронизации.' : 'Синхронизированный текст.' }} Хранится до {{ expires(job.expiresAt!) }}.</p>
+        <p class="field-note">{{ job.log.includes('без временных меток') ? 'Обычный текст без синхронизации.' : 'Синхронизированный текст.' }} <ArchiveRetention :job="job" /></p>
         <a class="primary-button" :href="`${baseURL}api/jobs/${job.id}/archive`"><AppIcon name="download" />Скачать ZIP</a>
       </template>
     </article>

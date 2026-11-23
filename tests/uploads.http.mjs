@@ -60,6 +60,19 @@ with zipfile.ZipFile(sys.argv[1]) as z:
  assert '[00:00.000]Текст' in z.read('Песня.lrc').decode()
  with tempfile.TemporaryDirectory() as d:
   p=pathlib.Path(d)/'song.flac';p.write_bytes(z.read('Песня.flac'));assert mutagen.File(p)['LYRICS']==['Текст']`,archive]);
+    // Global defaults also apply to uploaded lyrics files, without policy headers.
+    const countDefaults={quality:'hifi',retentionMode:'downloads',retentionHours:5,downloadLimit:1,lyrics:false};
+    assert.equal((await api('/api/admin/settings',cookie,countDefaults,'PUT')).status,200);
+    const counted=await(await upload()).json();
+    await until(async()=>(await jobs()).find(j=>j.id===counted.id)?.hasFiles);
+    const countedJob=(await jobs()).find(j=>j.id===counted.id);
+    assert.equal(countedJob.retentionMode,'downloads');assert.equal(countedJob.expiresAt,null);
+    assert.equal((await api(`/api/jobs/${counted.id}/archive`,cookie,undefined,'HEAD')).status,200);
+    assert.equal((await jobs()).find(j=>j.id===counted.id).downloadCount,0);
+    const countedZip=await api(`/api/jobs/${counted.id}/archive`,cookie);assert.equal(countedZip.status,200);await countedZip.arrayBuffer();
+    await until(async()=>!!(await jobs()).find(j=>j.id===counted.id).expiredAt);
+    assert.equal((await api(`/api/jobs/${counted.id}/archive`,cookie)).status,410);
+    assert.equal((await api('/api/admin/settings',cookie,{...countDefaults,retentionMode:'time'},'PUT')).status,200);
     const bad=await(await upload(Buffer.from('not audio'))).json();await until(async()=>(await jobs()).find(j=>j.id===bad.id)?.status==='failed');
     assert.ok(!(await readdir(downloads)).includes(bad.id),'invalid source removed');
     // A small compressed ID3 frame must fail without publishing or retaining audio.

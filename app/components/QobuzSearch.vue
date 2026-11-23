@@ -24,6 +24,8 @@ const props = defineProps<{
 }>();
 const quality = defineModel<string>("quality", { required: true });
 const retention = defineModel<number>("retentionHours", { required: true });
+const retentionMode = defineModel<string>("retentionMode", { required: true });
+const downloadLimit = defineModel<number>("downloadLimit", { required: true });
 const lyrics = defineModel<boolean>("lyrics", { required: true });
 const emit = defineEmits<{ queued: [] }>();
 const api = $fetch.create({
@@ -137,7 +139,7 @@ async function addSelected() {
   const target = state.value;
   if (!target.selected.length || busy.value || props.disabled) return;
   const ids = [...target.selected];
-  const options = { quality: quality.value, retentionHours: retention.value, lyrics: lyrics.value };
+  const options = { quality: quality.value, retentionHours: retention.value, retentionMode: retentionMode.value, downloadLimit: downloadLimit.value, lyrics: lyrics.value };
   adding.value = true;
   added.value = 0;
   target.error = target.notice = "";
@@ -315,18 +317,7 @@ async function addSelected() {
                 </option>
               </select>
             </div>
-            <div class="field">
-              <label for="search-retention">Хранить архив</label
-              ><select
-                id="search-retention"
-                v-model.number="retention"
-                :disabled="busy"
-              >
-                <option v-for="hours in 24" :key="hours" :value="hours">
-                  {{ hours }} ч
-                </option>
-              </select>
-            </div>
+            <RetentionOptions prefix="search-retention" v-model:mode="retentionMode" v-model:hours="retention" v-model:downloads="downloadLimit" :disabled="busy" />
             <button
               type="button"
               class="primary-button"
@@ -348,7 +339,7 @@ async function addSelected() {
             <span>Добавлять тексты песен<span class="field-note">Синхронизированный текст и файл .lrc, если найдены.</span></span>
           </label>
           <p class="field-note">
-            {{ activeType === 'tracks' ? 'Каждый трек' : activeType === 'albums' ? 'Каждый альбом' : 'Каждая дискография' }} — отдельное задание и ZIP. Архив хранится {{ retention }} ч после завершения.
+            {{ activeType === 'tracks' ? 'Каждый трек' : activeType === 'albums' ? 'Каждый альбом' : 'Каждая дискография' }} — отдельное задание и ZIP. {{ retentionMode === 'downloads' ? `Архив хранится до ${downloadLimit} скачиваний.` : `Архив хранится ${retention} ч после завершения.` }}
           </p>
         </div>
       </template>

@@ -172,8 +172,8 @@ and ownership checks apply to both the manifest and the retry endpoint.
 
 ## ZIP downloads and automatic expiry
 
-Select **1–24 hours** when adding a download. `DOWNLOAD_RETENTION_HOURS` supplies the default.
-The retention clock starts when the job finishes, including failed/cancelled jobs with partial files.
+Choose **1–24 hours** or **1–100 completed downloads** when adding a download. `DOWNLOAD_RETENTION_HOURS` supplies the default.
+For time retention, the clock starts when the job finishes, including failed/cancelled jobs with partial files.
 Each job uses a separate UUID directory. Its expiry time appears in the queue.
 Use the **ZIP** link in the queue or the archive card in the library to download the whole job.
 Downloads are available only as ZIP archives; source files are never served through the file API.
@@ -356,7 +356,7 @@ Legacy password-comparison options were removed along with the old authenticatio
 one active receive per user and two globally. If using a reverse proxy, permit
 100 MiB request bodies and the upload timeout for this endpoint; JSON endpoints
 retain their independent 64 KiB cap. The route validates the basename, extension,
-metadata and 1–5 hour retention before receiving data, rechecks the session while
+metadata and time retention (1–5 hours) or download-count retention before receiving data, rechecks the session while
 receiving and on completion, and reserves a normal account job/quota slot.
 The worker checks the actual container with Mutagen and has a 90-second timeout.
 Uploads use `PYTHON_BIN` and the existing Python dependencies; no Qobuz login is
@@ -387,3 +387,35 @@ at the TLS proxy; the app's HSTS header does not create that redirect. After
 rebuilding/recreating, check the main HTML response as well as API errors, e.g.
 `curl -I https://your-host/dl/`. Proxy-generated responses need proxy-level headers
 if you want the same protection there.
+
+## Saved application defaults and counted retention
+
+Administrators edit **Настройки → Настройки по умолчанию**: quality, retention mode,
+hours, download limit and optional lyrics. The validated settings are written
+atomically to `DATA_DIR/app-settings.json` (0600) and survive container recreation
+with the existing data volume. With no saved file, quality and hours fall back to
+`DOWNLOAD_QUALITY` and `DOWNLOAD_RETENTION_HOURS`; mode is time, limit is 1 and lyrics
+are off. `GET`/`PUT /api/admin/settings` require an active administrator session;
+permissions are checked again after reading a PUT body. `/api/status` exposes only
+these public defaults alongside readiness, never secrets. Already created jobs are
+unchanged. Untouched open forms adopt updated defaults during polling; explicit
+user choices remain until changed. Saving as administrator also updates their
+next-download form. For uploaded lyrics files the time default is capped at 5 hours.
+
+A job may use `retentionMode: "downloads"` and `downloadLimit: 1..100` instead of
+`"time"`. Its `expiresAt` is null; it remains until the counter is exhausted or an
+administrator deletes it. Ordinary storage/job quotas still apply. The counter is
+persisted per job, and individual track retries inherit the policy with a new zero
+counter. Empty failed/cancelled jobs still receive cleanup timestamps.
+
+Only a full ZIP response that the server finishes sending counts. HEAD, rejected
+requests and interrupted streams do not count; server completion does not prove
+the client saved the file to disk. ZIP responses do not support partial ranges:
+a Range request gets the full 200 response, which counts if completed. In-flight
+transfers reserve remaining slots to prevent concurrent requests exceeding the
+limit (409 while all slots are in use). Completion increments once; cancellation
+releases the slot. After the final response, the ZIP is deleted and later requests
+return 410. A server crash during a transfer releases in-flight reservations on
+restart; completed counters survive. Source files remain private and are never
+served independently. This policy also applies to uploaded lyrics ZIPs via
+`X-Retention-Mode`/`X-Download-Limit`; legacy hours headers continue working.

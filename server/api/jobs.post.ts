@@ -1,3 +1,4 @@
+import { loadDefaults } from '../utils/app-settings.mjs';
 import { readJsonBody } from "../utils/request";
 import { requireCurrentUser } from "../utils/account";
 import { getQueue, readiness } from "../utils/queue.mjs";
@@ -11,12 +12,15 @@ export default defineEventHandler(async (event) => {
   const body = await readJsonBody(event);
   const user = requireCurrentUser(event);
   try {
-    return getQueue().add(
+    const queue = getQueue();
+    const defaults = loadDefaults(queue.settings);
+    return queue.add(
       body?.url,
-      body?.quality || ready.quality,
-      body?.retentionHours ?? ready.retentionHours,
+      body?.quality ?? defaults.quality,
+      body?.retentionHours ?? defaults.retentionHours,
       user.id,
-      body?.lyrics ?? false,
+      body?.lyrics ?? defaults.lyrics,
+      { retentionMode: body?.retentionMode ?? defaults.retentionMode, downloadLimit: body?.downloadLimit ?? defaults.downloadLimit },
     );
   } catch (error) {
     throw createError({

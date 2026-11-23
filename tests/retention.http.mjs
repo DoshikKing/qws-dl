@@ -1,0 +1,96 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { createServer } from 'node:net';
+
+test('HTTP defaults and counted ZIPs: permissions, aborted/concurrent transfers, HEAD, restart, final deletion and session revocation', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'qws-counted-'));
+  const data = join(base, 'data'), root = join(base, 'orpheus'), python = join(base, 'fixture-python');
+  const actualPython = resolve('.runtime/venv/bin/python');
+  const listener = createServer(); listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
+  const port = listener.address().port; await new Promise(done => listener.close(done));
+  const origin = `http://127.0.0.1:${port}/dl`;
+  let server, paused;
+  const request = (path, cookie = '', method = 'GET', body, headers = {}) => fetch(origin + path, {
+    method, headers: { cookie, 'content-type': 'application/json', ...headers }, body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const until = async check => { for (let i = 0; i < 160; i++) { if (await check()) return; await new Promise(done => setTimeout(done, 50)); } throw Error('Timed out'); };
+  const stop = async () => { if (!server || server.exitCode !== null) return; const closed = once(server, 'close');server.kill('SIGTERM');const timer = setTimeout(() => server.kill('SIGKILL'), 5000);await closed;clearTimeout(timer); };
+  const start = async () => {
+    server = spawn(process.execPath, ['.output/server/index.mjs'], { env: { ...process.env, HOST: '127.0.0.1', PORT: String(port), NUXT_APP_BASE_URL: '/dl/',
+      DATA_DIR: data, DOWNLOAD_DIR: join(base, 'downloads'), ORPHEUS_DIR: root, PYTHON_BIN: python, ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'fixture-admin-password', MIN_FREE_BYTES: '0' }, stdio: 'ignore' });
+    await until(async () => { try { return (await request('/api/health')).ok; } catch { return false; } });
+  };
+  try {
+    await mkdir(join(root, 'modules/qobuz'), { recursive: true }); await mkdir(data);
+    await writeFile(join(root, 'orpheus.py'), '# fixture');await writeFile(join(root, 'modules/qobuz/interface.py'), '# fixture');
+    await writeFile(join(data, 'qobuz-session.json'), JSON.stringify({ userId: '123', authToken: 'fixture-token', updatedAt: new Date().toISOString() }));
+    await writeFile(python, `#!${actualPython}
+import os, sys
+from pathlib import Path
+if sys.argv[1] != '-u':
+    os.execv(${JSON.stringify(actualPython)}, [${JSON.stringify(actualPython)}, *sys.argv[1:]])
+with Path(os.environ['DOWNLOAD_DIR'], 'fixture.flac').open('wb') as out:
+    out.truncate(32 * 1024**2 if sys.argv[-2].endswith('/999') else 1024)
+`, { mode: 0o700 });
+    await start();
+    const login = async () => { const response = await request('/api/login', '', 'POST', { username: 'admin', password: 'fixture-admin-password' });assert.equal(response.status, 200);return response.headers.get('set-cookie').split(';')[0]; };
+    let admin = await login();
+    const profile = await (await request('/api/account', admin)).json();
+    const register = async username => { const response = await request('/api/register', '', 'POST', { username, password: 'fixture-user-password', inviteCode: profile.inviteCode });assert.equal(response.status, 200);return response.headers.get('set-cookie').split(';')[0]; };
+    const alice = await register('alice'), bob = await register('bob');
+    assert.equal((await request('/api/admin/settings')).status, 401);
+    assert.equal((await request('/api/admin/settings', alice)).status, 403);
+    const defaults = { quality: 'lossless', retentionMode: 'downloads', retentionHours: 3, downloadLimit: 2, lyrics: true };
+    assert.equal((await request('/api/admin/settings', bob, 'PUT', defaults)).status, 403);
+    assert.equal((await request('/api/admin/settings', admin, 'PUT', { ...defaults, downloadLimit: 0 })).status, 400);
+    assert.equal((await request('/api/admin/settings', admin, 'PUT', { ...defaults, data: '/tmp' })).status, 400);
+    assert.deepEqual(await (await request('/api/admin/settings', admin, 'PUT', defaults)).json(), defaults);
+    const status = await (await request('/api/status', alice)).json();
+    assert.equal(status.retentionMode, 'downloads'); assert.equal(status.quality, 'lossless');
+    const add = async (id, options = {}) => { const response = await request('/api/jobs', alice, 'POST', { url: 'https://open.qobuz.com/track/' + id, ...options });assert.equal(response.status, 200);return response.json(); };
+    const jobs = async () => (await request('/api/jobs', alice)).json();
+    const job = await add('123');
+    assert.equal(job.downloadLimit, 2);assert.equal(job.lyrics, true);assert.equal(job.quality, 'lossless');assert.equal(job.retentionMode, 'downloads');
+    const path = `/api/jobs/${job.id}/archive`;
+    await until(async () => (await jobs()).find(item => item.id === job.id)?.hasFiles);
+    const head = await request(path, alice, 'HEAD');assert.equal(head.status, 200);assert.ok(Number(head.headers.get('content-length')) > 1024);assert.equal((await head.arrayBuffer()).byteLength, 0);assert.equal(head.headers.get('content-type'), 'application/zip');
+    assert.equal((await request(path, bob, 'HEAD')).status, 404);
+    assert.equal((await request(path, bob)).status, 404);
+    assert.equal((await jobs()).find(item => item.id === job.id).downloadCount, 0);
+    const first = await request(path, alice);assert.equal(first.status, 200);assert.ok((await first.arrayBuffer()).byteLength > 1024);
+    await until(async () => (await jobs()).find(item => item.id === job.id).downloadCount === 1);
+    await stop();await start();
+    assert.deepEqual(await (await request('/api/admin/settings', admin)).json(), defaults);
+    assert.equal((await jobs()).find(item => item.id === job.id).downloadCount, 1);
+    assert.equal((await jobs()).find(item => item.id === job.id).expiresAt, null);
+    const last = await request(path, alice, 'GET', undefined, { Range: 'bytes=0-9' });assert.equal(last.status, 200);assert.ok((await last.arrayBuffer()).byteLength > 1024);
+    await until(async () => !!(await jobs()).find(item => item.id === job.id).expiredAt);
+    assert.equal((await request(path, alice)).status, 410);
+    await assert.rejects(readFile(join(base, 'downloads', job.id, '.qws-archive.zip')), { code: 'ENOENT' });
+    const big = await add('999', { downloadLimit: 1 });const bigPath = `/api/jobs/${big.id}/archive`;
+    await until(async () => (await jobs()).find(item => item.id === big.id)?.hasFiles);
+    const response = await new Promise((done, reject) => { paused = http.get(origin + bigPath, { headers: { cookie: alice } }, result => { result.pause(); done(result); });paused.on('error', reject); });
+    assert.equal(response.statusCode, 200);
+    assert.equal((await request(bigPath, alice)).status, 409);
+    response.destroy();paused.destroy();
+    await new Promise(done => setTimeout(done, 150));
+    assert.equal((await jobs()).find(item => item.id === big.id).downloadCount, 0);
+    const completed = await request(bigPath, alice);assert.equal(completed.status, 200);assert.ok((await completed.arrayBuffer()).byteLength > 32 * 1024 ** 2);
+    await until(async () => !!(await jobs()).find(item => item.id === big.id).expiredAt);
+    const timeJob = await add('124', { retentionMode: 'time', retentionHours: 2, lyrics: false });
+    await until(async () => !!(await jobs()).find(item => item.id === timeJob.id)?.hasFiles);
+    assert.ok((await jobs()).find(item => item.id === timeJob.id).expiresAt);
+    const slow = http.request(origin + '/api/admin/settings', { method: 'PUT', headers: { cookie: admin, 'content-type': 'application/json', 'transfer-encoding': 'chunked' } });
+    const revoked = new Promise((done, reject) => { slow.on('response', async result => { for await (const chunk of result) {} done(result.statusCode); });slow.on('error', reject); });
+    slow.write('{');await new Promise(done => setTimeout(done, 100));
+    await request('/api/logout', admin, 'POST');slow.end(JSON.stringify({ ...defaults, quality: 'high' }).slice(1));assert.equal(await revoked, 401);
+    admin = await login();assert.deepEqual(await (await request('/api/admin/settings', admin)).json(), defaults);
+    assert.deepEqual(JSON.parse(await readFile(join(data, 'app-settings.json'), 'utf8')), defaults);
+  } finally { paused?.destroy(); await stop(); await rm(base, { recursive: true, force: true }); }
+});

@@ -26,6 +26,7 @@ export async function listArchives(queue, user, owners = null) {
       downloadWarning: queue.albumOutcome(job).downloadWarning,
       archiveError: job.archiveError || null,
       expiresAt: job.expiresAt,
+      retentionMode: job.retentionMode, downloadLimit: job.downloadLimit, downloadCount: job.downloadCount,
       ...(owners
         ? {
             owner:

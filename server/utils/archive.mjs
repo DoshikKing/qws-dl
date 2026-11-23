@@ -48,7 +48,7 @@ export async function prepareArchive(queue, job) {
       task.child = child;
       const timer = setTimeout(
         () => child.kill("SIGKILL"),
-        Math.max(1, Math.min(300_000, Date.parse(job.expiresAt) - Date.now())),
+        Math.max(1, Math.min(300_000, (job.expiresAt ? Date.parse(job.expiresAt) - Date.now() : 300_000))),
       );
       child.once("error", reject);
       child.once("close", (code) => {
