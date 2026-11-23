@@ -17,6 +17,7 @@ const baseURL = useRuntimeConfig().app.baseURL.replace(/\/?$/, "/");
 const api = $fetch.create({ baseURL });
 const files = ref<Archive[]>([]);
 const search = ref("");
+const searchInput = ref<HTMLInputElement | null>(null);
 const error = ref("");
 const notice = ref("");
 const loading = ref(true);
@@ -75,16 +76,18 @@ async function confirmDelete(file: Archive) {
   dialog.value?.showModal();
 }
 async function remove() {
-  if (!selected.value) return;
+  if (!selected.value || busy.value) return;
   busy.value = true;
   dialogError.value = "";
   try {
-    await api(`/api/admin/downloads/${selected.value.id}`, {
+    await api(props.management ? `/api/admin/downloads/${selected.value.id}` : `/api/jobs/${selected.value.id}/archive`, {
       method: "DELETE",
     });
     notice.value = `Удалено: ${selected.value.name}`;
     dialog.value?.close();
     await refresh();
+    await nextTick();
+    searchInput.value?.focus();
     emit("changed");
   } catch (e: any) {
     dialogError.value = e.data?.statusMessage || "Не удалось удалить файлы.";
@@ -114,6 +117,7 @@ async function retry(file: Archive) {
       </h2>
       <div class="search-control">
         <AppIcon name="search" /><input
+          ref="searchInput"
           v-model="search"
           type="search"
           aria-label="Поиск архивов"
@@ -125,7 +129,7 @@ async function retry(file: Archive) {
       {{
         management
           ? "Архивы всех пользователей. Удаление освободит место; история загрузок сохранится."
-          : "Архивы удаляются по выбранному сроку или после заданного числа скачиваний."
+          : "Ваши архивы можно удалить вручную. История загрузок сохранится."
       }}
     </p>
     <p v-if="error" class="notice notice-error" role="alert">{{ error }}</p>
@@ -192,7 +196,6 @@ async function retry(file: Archive) {
                   Повторить
                 </button>
                 <button
-                  v-if="management"
                   class="icon-button danger-button"
                   :aria-label="`Удалить ${file.name}`"
                   :disabled="busy || file.status === 'archiving'"
@@ -201,7 +204,7 @@ async function retry(file: Archive) {
                   <AppIcon name="trash" />
                 </button>
                 <a
-                  v-else-if="file.status !== 'archiving' && !file.archiveError"
+                  v-if="!management && file.status !== 'archiving' && !file.archiveError"
                   class="icon-button"
                   :href="`${baseURL}api/jobs/${file.id}/archive`"
                   :aria-label="`Скачать ZIP: ${file.name}`"

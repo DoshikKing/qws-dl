@@ -31,7 +31,10 @@ Reference: https://developer.apple.com/design/human-interface-guidelines/
   invitation codes in URL parameters.
 
 Completed downloads are offered as ZIP archives; source tracks are temporary worker output.
-Administrator storage management must identify the archive and its owner before deletion.
+Users can delete their own archives from Archives; administrators can delete any
+archive from Storage. Reuse the confirmation dialog, preserve download history,
+and return keyboard focus to archive search after removing a row. Administrator
+storage management must identify the archive and its owner before deletion.
 
 ## Interaction and motion
 

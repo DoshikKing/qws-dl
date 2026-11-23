@@ -18,6 +18,7 @@ type Job = {
   expiresAt?: string | null;
   expiredAt?: string;
   deletedAt?: string;
+  deletedBy?: string;
   archiveError?: string;
   downloadWarning?: boolean;
   trackFailureOnly?: boolean;

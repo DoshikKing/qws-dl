@@ -510,14 +510,16 @@ export class DownloadQueue {
     return true;
   }
 
-  deleteFiles(job) {
+  deleteFiles(job, deletedBy = "admin") {
     if (
       ["running", "queued", "uploading", "archiving"].includes(job.status) ||
       this.active?.job.id === job.id
     )
       throw new Error("busy");
+    if (job.deletedAt) return;
     rmSync(this.folder(job), { recursive: true, force: true });
     job.deletedAt = new Date().toISOString();
+    job.deletedBy = deletedBy;
     job.hasFiles = false;
     delete job.archiveError;
     delete job.cleanupError;

@@ -95,6 +95,15 @@ with zipfile.ZipFile(sys.argv[1]) as z:
     assert.equal((await api(`/api/jobs/${rejected.id}/archive`,cookie)).status,404);
     assert.ok(!(await readdir(downloads)).includes(rejected.id));
 
+    // Regular users can delete their own uploaded lyrics ZIP without admin access.
+    const ownUpload=await(await upload(audio,{cookie:aliceCookie})).json();
+    await until(async()=>(await(await api('/api/jobs',aliceCookie)).json()).find(j=>j.id===ownUpload.id)?.hasFiles);
+    assert.equal((await api(`/api/jobs/${ownUpload.id}/archive`,cookie,undefined,'DELETE')).status,404);
+    assert.equal((await api(`/api/jobs/${ownUpload.id}/archive`,aliceCookie,undefined,'DELETE')).status,200);
+    assert.equal((await api(`/api/jobs/${ownUpload.id}/archive`,aliceCookie)).status,410);
+    assert.ok(!(await readdir(downloads)).includes(ownUpload.id));
+    assert.equal((await(await api('/api/jobs',aliceCookie)).json()).find(j=>j.id===ownUpload.id).deletedBy,'owner');
+
     // A permission revoked mid-upload must not enqueue a worker or retain audio.
     const slow=stream({cookie:aliceCookie});slow.request.write(audio.subarray(0,50));await new Promise(r=>setTimeout(r,150));
     const receivingJob=JSON.parse(await readFile(join(data,'jobs.json'),'utf8')).find(j=>j.status==='uploading');

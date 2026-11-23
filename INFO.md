@@ -426,3 +426,13 @@ return 410. A server crash during a transfer releases in-flight reservations on
 restart; completed counters survive. Source files remain private and are never
 served independently. This policy also applies to uploaded lyrics ZIPs via
 `X-Retention-Mode`/`X-Download-Limit`; legacy hours headers continue working.
+
+
+Users can delete their own completed archives from **Архивы** after confirmation.
+`DELETE /api/jobs/:id/archive` rechecks the current session and ownership on the
+server (401 without a valid session, 404 for missing/foreign jobs); it rejects active
+downloads/archiving with 409 and cross-origin requests with 403. It removes only
+that job's folder, preserves history, records `deletedAt`/`deletedBy: "owner"`,
+and makes downloads/re-archiving return 410. Repeated deletion is safe. The
+administrator's separate `DELETE /api/admin/downloads/:id` remains admin-only
+and works across owners (`deletedBy: "admin"`). This also covers uploaded lyrics ZIPs.

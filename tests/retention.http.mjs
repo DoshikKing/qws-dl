@@ -31,10 +31,11 @@ test('HTTP defaults and counted ZIPs: permissions, aborted/concurrent transfers,
     await writeFile(join(root, 'orpheus.py'), '# fixture');await writeFile(join(root, 'modules/qobuz/interface.py'), '# fixture');
     await writeFile(join(data, 'qobuz-session.json'), JSON.stringify({ userId: '123', authToken: 'fixture-token', updatedAt: new Date().toISOString() }));
     await writeFile(python, `#!${actualPython}
-import os, sys
+import os, sys, time
 from pathlib import Path
 if sys.argv[1] != '-u':
     os.execv(${JSON.stringify(actualPython)}, [${JSON.stringify(actualPython)}, *sys.argv[1:]])
+if sys.argv[-2].endswith('/127'): time.sleep(0.5)
 with Path(os.environ['DOWNLOAD_DIR'], 'fixture.flac').open('wb') as out:
     out.truncate(32 * 1024**2 if sys.argv[-2].endswith('/999') else 1024)
 `, { mode: 0o700 });
@@ -98,6 +99,39 @@ with Path(os.environ['DOWNLOAD_DIR'], 'fixture.flac').open('wb') as out:
     const timeJob = await add('124', { retentionMode: 'time', retentionHours: 2, lyrics: false });
     await until(async () => !!(await jobs()).find(item => item.id === timeJob.id)?.hasFiles);
     assert.ok((await jobs()).find(item => item.id === timeJob.id).expiresAt);
+    // Owner deletion is separate from cancellation and admin-wide storage management.
+    const owned = await add('127', { retentionMode: 'time', lyrics: false });
+    const ownPath = `/api/jobs/${owned.id}/archive`;
+    assert.equal((await request(ownPath, alice, 'DELETE')).status, 409);
+    await until(async () => !!(await jobs()).find(item => item.id === owned.id)?.hasFiles);
+    assert.equal((await request(ownPath, '', 'DELETE')).status, 401);
+    assert.equal((await request(ownPath, bob, 'DELETE')).status, 404);
+    assert.equal((await request(ownPath, admin, 'DELETE')).status, 404);
+    assert.equal((await request(`/api/admin/downloads/${owned.id}`, alice, 'DELETE')).status, 403);
+    assert.equal((await request(ownPath, alice, 'DELETE', undefined, {origin:'https://untrusted.example'})).status, 403);
+    assert.equal((await request('/api/jobs/missing/archive', alice, 'DELETE')).status, 404);
+    assert.ok((await (await request('/api/files', alice)).json()).files.some(file => file.id === owned.id));
+    assert.equal((await request(ownPath, alice, 'DELETE')).status, 200);
+    const deleted = (await jobs()).find(item => item.id === owned.id);
+    assert.ok(deleted.deletedAt); assert.equal(deleted.deletedBy, 'owner'); assert.equal(deleted.hasFiles, false);
+    assert.equal(deleted.status, 'completed'); assert.equal(deleted.downloadCount, 0);
+    assert.equal((await request(ownPath, alice)).status, 410);
+    assert.equal((await request(ownPath, alice, 'POST')).status, 410);
+    assert.equal((await request(ownPath, alice, 'DELETE')).status, 200);
+    assert.equal((await jobs()).find(item => item.id === owned.id).deletedAt, deleted.deletedAt);
+    assert.equal((await request(`/api/admin/downloads/${owned.id}`, admin, 'DELETE')).status, 200);
+    assert.equal((await jobs()).find(item => item.id === owned.id).deletedBy, 'owner');
+    assert.ok(!(await (await request('/api/files', alice)).json()).files.some(file => file.id === owned.id));
+    await assert.rejects(readFile(join(base, 'downloads', owned.id, '.qws-archive.zip')), {code:'ENOENT'});
+    // Neighbouring archives and administrator-wide deletion keep working.
+    assert.equal((await request(`/api/jobs/${timeJob.id}/archive`, alice, 'HEAD')).status, 200);
+    assert.equal((await request(`/api/admin/downloads/${timeJob.id}`, admin, 'DELETE')).status, 200);
+    assert.equal((await jobs()).find(item => item.id === timeJob.id).deletedBy, 'admin');
+    await stop(); await start();
+    assert.equal((await jobs()).find(item => item.id === owned.id).deletedBy, 'owner');
+    assert.equal((await request(ownPath, alice)).status, 410);
+    await request('/api/logout', bob, 'POST');
+    assert.equal((await request(ownPath, bob, 'DELETE')).status, 401);
     const slow = http.request(origin + '/api/admin/settings', { method: 'PUT', headers: { cookie: admin, 'content-type': 'application/json', 'transfer-encoding': 'chunked' } });
     const revoked = new Promise((done, reject) => { slow.on('response', async result => { for await (const chunk of result) {} done(result.statusCode); });slow.on('error', reject); });
     slow.write('{');await new Promise(done => setTimeout(done, 100));
