@@ -670,11 +670,13 @@ onBeforeUnmount(() => clearInterval(timer));
                   @changed="refresh"
                 />
 
-                <UserManagement
-                  v-else-if="tab === 'users' && account?.role === 'admin'"
-                />
+                <template v-else-if="tab === 'users' && account?.role === 'admin'">
+                  <UserManagement />
+                  <UsageStatistics management />
+                </template>
                 <template v-else>
                   <AccountSettings v-if="account" :account="account" />
+                  <UsageStatistics v-if="account" :key="account.id" />
                   <template v-if="account?.role === 'admin'">
                     <section class="section" aria-labelledby="qobuz-settings">
                       <div class="section-heading">

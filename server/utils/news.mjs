@@ -1,6 +1,28 @@
 // Newest first. Every app update needs a new unique id and factual release notes.
 export const releases = [
   {
+    id: '2026-11-24-usage-statistics', version: '1.1.0', date: '2026-11-24', title: 'Статистика скачиваний',
+    summary: 'Личные счётчики архивов, треков и жанров; администратор видит сводку всех пользователей.',
+    sections: [{ title: 'Использование приложения', items: [
+      'В настройках появилась «Ваша статистика»: завершённые скачивания ZIP, число треков и распределение по жанрам из тегов.',
+      'Администратор видит статистику всех аккаунтов в разделе «Пользователи» и может выбрать пользователя для просмотра жанров.',
+      'Повторные скачивания учитываются повторно, прерванные передачи и запросы HEAD — нет. Файлы из раздела «Тексты» не входят в сводку.',
+      'Счётчики сохраняются после удаления архивов и очистки истории. Учёт начинается после обновления: прошлые скачивания не восстанавливаются; архивы без сведений о треках помечаются отдельно.',
+      'Для локальной установки нужен Node.js 22.13 или новее со встроенной SQLite; Docker уже использует подходящий Node 22.',
+    ] }],
+    english: {
+      title: 'Download usage statistics',
+      summary: 'Personal archive, track and genre totals, with an administrator overview of every account.',
+      sections: [{ title: 'Application usage', items: [
+        'Settings now includes personal statistics for completed ZIP transfers, audio-track counts and genres from embedded tags.',
+        'Administrators can view all accounts in Users and select an account to inspect its genre breakdown.',
+        'Repeated downloads count again; interrupted transfers and HEAD requests do not count. Lyrics-upload exports are excluded.',
+        'Totals survive archive deletion and history pruning. Collection starts after this update; past downloads cannot be reconstructed, and archives without track summaries are identified separately.',
+        'Local Node.js installations now require version 22.13 or newer for built-in SQLite. Docker uses the supported Node 22 runtime.',
+      ] }],
+    },
+  },
+  {
     id: '2026-11-23-github-releases', version: '1.0.0', date: '2026-11-23', title: 'Первый версионный релиз',
     summary: 'Релизы QWS теперь имеют версии, теги и отдельные архивы на GitHub.',
     sections: [

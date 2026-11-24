@@ -1,3 +1,4 @@
+import { requireCurrentUser } from "../../../utils/account";
 import { open } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { getQueue } from "../../../utils/queue.mjs";
@@ -59,7 +60,8 @@ export default defineEventHandler(async (event) => {
   let release: ((success: boolean) => void) | undefined;
   try {
     const size = (await handle.stat()).size;
-    if (event.method !== "HEAD") release = queue.reserveArchive(job);
+    requireCurrentUser(event);
+    if (event.method !== "HEAD") release = queue.reserveArchive(job, event.context.user.id);
     setResponseHeaders(event, {
       "Content-Type": "application/zip",
       "Accept-Ranges": "none",

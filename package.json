@@ -11,7 +11,7 @@
     "setup:orpheus": "bash scripts/install-orpheus.sh",
     "diagnose:qobuz": "node --env-file-if-exists=.env scripts/diagnose-qobuz.mjs",
     "test": "node --test tests/*.test.mjs",
-    "test:integration": "node --test tests/http.smoke.mjs tests/security.http.mjs tests/uploads.http.mjs tests/album-tracks.http.mjs tests/retention.http.mjs tests/news.http.mjs tests/subscription.http.mjs",
+    "test:integration": "node --test tests/http.smoke.mjs tests/security.http.mjs tests/uploads.http.mjs tests/album-tracks.http.mjs tests/retention.http.mjs tests/news.http.mjs tests/subscription.http.mjs tests/statistics.http.mjs",
     "test:python": ".runtime/venv/bin/python -m unittest discover -s tests -p 'test_*.py'",
     "typecheck": "nuxt typecheck",
     "release:prepare": "node scripts/release.mjs"
@@ -25,7 +25,7 @@
     "vue-tsc": "^3.2.5"
   },
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.13"
   },
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

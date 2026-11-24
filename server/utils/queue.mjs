@@ -15,6 +15,7 @@ import { retentionPolicy, archiveExpiration } from './retention.mjs';
 import { loadDefaults } from './app-settings.mjs';
 import { prepareArchive } from "./archive.mjs";
 import { qobuzEnvironment, workerEnvironment, readQobuzSession, retiredQobuzVariables } from "./qobuz-session.mjs";
+import { UsageStatistics, archiveStatistics } from './statistics.mjs';
 import { takeLimit } from "./rate-limit.mjs";
 import { folderBytes, requireSpace } from "./storage.mjs";
 
@@ -136,6 +137,7 @@ export class DownloadQueue {
     this.archiveTransfers = new Map();
     mkdirSync(settings.data, { recursive: true, mode: 0o700 });
     mkdirSync(settings.downloads, { recursive: true });
+    this.statistics = new UsageStatistics(settings.data);
     this.file = join(settings.data, "jobs.json");
     this.jobs = existsSync(this.file)
       ? JSON.parse(readFileSync(this.file, "utf8"))
@@ -537,6 +539,7 @@ export class DownloadQueue {
 
   close() {
     this.stopping = true;
+    this.statistics.close();
     if (this.saveTimer) this.save();
     clearTimeout(this.cleanupTimer);
     this.kill();
@@ -664,11 +667,12 @@ export class DownloadQueue {
     }
   }
 
-  reserveArchive(job) {
+  reserveArchive(job, userId = job.userId) {
     if (this.expired(job)) throw Object.assign(new Error('Архив удалён.'), { statusCode: 410 });
-    if (job.retentionMode !== 'downloads') return () => {};
+    const counted = job.retentionMode === 'downloads';
+    const summary = job.kind === 'lyrics-upload' ? null : archiveStatistics(join(this.folder(job), '.qws-archive.zip'));
     const reserved = this.archiveTransfers.get(job.id) || 0;
-    if (job.downloadCount + reserved >= job.downloadLimit)
+    if (counted && job.downloadCount + reserved >= job.downloadLimit)
       throw Object.assign(new Error('Оставшиеся скачивания уже выполняются. Повторите позже.'), { statusCode: 409 });
     this.archiveTransfers.set(job.id, reserved + 1);
     let released = false;
@@ -679,6 +683,11 @@ export class DownloadQueue {
       if (remaining) this.archiveTransfers.set(job.id, remaining);
       else this.archiveTransfers.delete(job.id);
       if (success) {
+        if (job.kind !== 'lyrics-upload') {
+          try { this.statistics.recordDownload(userId, summary); }
+          catch { console.error('Unable to save download statistics.'); }
+        }
+        if (!counted) return;
         job.downloadCount++;
         this.save();
         this.cleanupExpired();

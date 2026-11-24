@@ -242,7 +242,7 @@ recreation, not a new build. Local dev/production processes must restart after e
 
 ## Local development and validation
 
-Requirements: Node.js 22.12+ or 24, Python 3.10+ with `venv`, Git and FFmpeg on `PATH`.
+Requirements: Node.js 22.13+ or 24, Python 3.10+ with `venv`, Git and FFmpeg on `PATH`.
 Debian/Ubuntu prerequisites: `apt-get install python3 python3-venv git ffmpeg build-essential cmake`.
 
 ```sh
@@ -564,3 +564,28 @@ It shares the background refresher, serializes requests, bounds manual success
 rechecks to one minute and failures to five minutes, and rechecks admin authorization
 after waiting. Failures preserve the previous session. The heading opens Settings.
 Rebuild the image to apply bridge and UI changes.
+
+## Usage statistics
+
+Settings shows personal statistics; Users includes an administrator-only overview
+and per-account genre breakdown. `GET /api/statistics` always returns the signed-in
+account, ignoring user-id query parameters. `GET /api/admin/statistics` requires
+current administrator authorization and returns only usernames, ids, disabled
+status and aggregates, never invite codes, session tokens or password data.
+
+Counts represent completed outbound Qobuz ZIP transfers, not queue submissions or
+Qobuz playback. Repeated exports count again; HEAD requests, interrupted transfers
+and Lyrics uploads are excluded. The server response finishing is the completion
+signal; it cannot verify that the browser saved bytes to disk. Track counts come
+from valid audio files in that archive. A track uses its first embedded genre;
+missing genres are shown as «Без жанра». Failed/partial files are not audio tracks.
+An archive can contain successfully downloaded tracks from a partially failed job.
+
+The archive worker stores a versioned aggregate in the ZIP comment before deleting
+sources; there are no extra Qobuz requests, track names or external analytics.
+Older ZIPs without this summary still count as archive downloads, but their missing
+track metadata is disclosed. Historical transfers before collection cannot be
+reconstructed. The UI shows the collection start date. Aggregate-only records in
+private `DATA_DIR/usage.sqlite3` survive job-history pruning and archive removal;
+include this file in backups. Keep DATA_DIR private. Genre lists show the top 20
+plus an aggregated remainder. Native SQLite needs Node 22.13+ (included in Docker).

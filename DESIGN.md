@@ -122,3 +122,10 @@ with active or unknown streaming access must be labelled unconfirmed, with the
 provider date clearly separated from the current period. Show the year for old
 dates. The full admin card offers manual refresh with busy, success and error
 feedback; the last check time does not certify the provider record is current.
+
+Usage statistics belong in personal Settings and in Users for administrators;
+do not add another mobile navigation item. Show completed ZIP transfers and audio
+track counts as separate labelled totals, followed by genre bars with readable
+counts. Administrators select a username to inspect its genres. Include empty,
+loading, retry and incomplete-history states and the collection start date.
+Statistics must not reveal another account through the personal API.
