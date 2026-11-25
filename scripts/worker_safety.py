@@ -181,8 +181,13 @@ def install_tag_safety(path):
     from mutagen.id3 import _frames
 
     maximum = 16 * 1024**2
-    with Path(path).open('rb') as source:
-        header = source.read(10)
+    if hasattr(path, 'read'):
+        position = path.tell()
+        header = path.read(10)
+        path.seek(position)
+    else:
+        with Path(path).open('rb') as source:
+            header = source.read(10)
     if header.startswith(b'ID3'):
         if len(header) != 10 or any(value & 0x80 for value in header[6:10]):
             raise ValueError('Invalid ID3 size')

@@ -134,3 +134,12 @@ Tracks selected in catalog search form one batch with one ZIP and shared options
 Use «Скачать подборку» and confirm the selected track count. Batches reuse the
 album track disclosure, error states and individual retry behavior. Albums and
 artists remain separate jobs. Preserve selection when a batch request fails.
+
+Public sharing applies to one complete ZIP, not one selected song. Owners open
+«Поделиться» from Archives, choose a short expiry and copy the generated link;
+existing links can be revoked. Explain that everyone holding the URL can download
+all contents of that ZIP and that archive limits still apply. A public page has
+its own quiet record mark, actual artwork, metadata, sharing username, expiry and
+one download action. It never mounts the private workspace or prompts for login.
+Use placeholders for unavailable artwork/duration, escaped text and no external
+images, fonts or scripts. Preserve keyboard focus around the sharing dialog.

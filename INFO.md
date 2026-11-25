@@ -607,3 +607,59 @@ no new authentication retry mechanism or extra parallelism. Per-track failures
 continue the batch; authentication/infrastructure failures stop it. The existing
 track-list and retry endpoints enforce ownership for batches too. A retry creates
 a separate single-track job and ZIP. Albums/artists retain their existing behavior.
+
+## Public ZIP sharing and security boundary
+
+Owners can share one completed ZIP from Archives for 1, 6 or 24 hours, capped by
+archive expiry. Recipients get that entire ZIP, including every track and sidecar
+inside it. Possession of the URL grants download access: forwarding it forwards
+that access. A creator sees the plaintext URL only at creation; existing links
+can be revoked. Managers cannot create links for another account's archive.
+
+`POST/GET /api/jobs/:id/shares` and `DELETE /api/shares/:id` require the current
+owner session, same-origin mutation rules and body/permission rechecks. Only
+`hours` is accepted on creation. Anonymous GET/HEAD access is allowlisted solely
+for `/api/shared/:key`, `/cover` and `/download`; the key is never accepted as an
+account cookie, bearer login, user id or file path. The `/s/:key` page mounts a
+separate component and makes no account or private-workspace requests.
+
+Each random 256-bit key maps to one owner, job and immutable ZIP fingerprint;
+only its SHA-256 digest is persisted in private `DATA_DIR/shares.sqlite3` (0600).
+Public JSON exposes only display metadata, size, expiry and the owner's username.
+File paths, job ids, invitations, session material and logs are excluded. ZIP
+streaming uses a validated job path, O_NOFOLLOW and descriptor identity checks;
+public query parameters are rejected and Range cannot select another file.
+
+Live owner status, expiry and archive availability are checked on every request.
+Revocation/deletion/disablement destroy registered streams; a deadline timer and
+periodic liveness check also stop expired or invalid streams. Bytes already sent
+cannot be recalled. Complete public transfers consume the shared retention limit;
+HEAD and aborted transfers do not. Public recipients do not inflate personal ZIP
+usage statistics. Download reservations are shared with the owner's own transfers.
+
+Metadata comes from bounded reads of stored audio entries, never extracted paths
+or another provider request. Preview workers are limited to two, 30 seconds,
+512 MiB address space and bounded output/read budgets. Artwork accepts embedded
+JPEG/PNG only and is re-encoded into a small JPEG with pipe-only FFmpeg protocols;
+SVG and remote image URLs are never served. Missing/unsupported tags use explicit
+fallbacks. Public downloads perform no audio processing. Stored images are capped
+at 128 KiB; limits are 50 live links per owner, 1000 globally, 120 public requests
+per IP/minute, four simultaneous public downloads per IP and 32 globally.
+
+Public responses use no-store, no-referrer, noindex/nofollow/noarchive, nosniff,
+same-origin resource policy and a CSP denying objects, forms and framing. They
+neither issue session cookies nor enable CORS. Use HTTPS. The nginx example
+excludes `/dl/s/` and `/dl/api/shared/` from access/error request logs; apply the
+same redaction to any other proxy, CDN, monitoring or analytics service. URLs
+still exist in the recipient's browser/history; do not treat them as public IDs.
+Back up shares.sqlite3 privately. Links survive restarts on the same volume; a
+filesystem migration can change ZIP fingerprints and invalidate links, requiring
+new links. Do not publish this database.
+
+Automated security checks cover cross-account creation/revocation, cookie/bearer
+confusion, private API denial, query/path substitution, restart, expired/revoked
+keys, disabled owners, replaced files, safe artwork, byte-exact ZIP scope,
+HEAD/retention behavior, stream concurrency and active-transfer revocation at
+both `/` and `/dl/`. Browser checks cover untrusted text and absence of private
+requests. These checks establish the implemented boundary, not a guarantee that
+an arbitrary deployment or proxy configuration has no vulnerabilities.

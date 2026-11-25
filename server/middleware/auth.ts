@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
   }
   const path = event.path.split("?")[0];
   if (path === "/api/health" || (/^\/api\/qobuz\/callback\/[a-f0-9]{64}$/.test(path!) && event.method === "GET")) return;
+  if (/^\/api\/shared\/[A-Za-z0-9_-]{43}(?:\/(?:cover|download))?$/.test(path!) && ['GET','HEAD'].includes(event.method)) return;
   const store = await accountStore();
   if (["/api/login", "/api/register", "/api/invitations/check"].includes(path!))
     return;

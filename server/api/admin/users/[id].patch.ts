@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
   }
   if (["disable", "delete"].includes(body?.action)) {
     const queue = getQueue();
+    queue.shares.revokeFor("owner", id);
     for (const job of queue.jobs) if (job.userId === id) queue.cancel(job.id);
   }
   return { ok: true };

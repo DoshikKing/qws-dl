@@ -15,6 +15,7 @@ import { retentionPolicy, archiveExpiration } from './retention.mjs';
 import { loadDefaults } from './app-settings.mjs';
 import { prepareArchive } from "./archive.mjs";
 import { qobuzEnvironment, workerEnvironment, readQobuzSession, retiredQobuzVariables } from "./qobuz-session.mjs";
+import { ShareStore } from './shares.mjs';
 import { UsageStatistics, archiveStatistics } from './statistics.mjs';
 import { takeLimit } from "./rate-limit.mjs";
 import { folderBytes, requireSpace } from "./storage.mjs";
@@ -138,6 +139,7 @@ export class DownloadQueue {
     mkdirSync(settings.data, { recursive: true, mode: 0o700 });
     mkdirSync(settings.downloads, { recursive: true });
     this.statistics = new UsageStatistics(settings.data);
+    this.shares = new ShareStore(settings.data);
     this.file = join(settings.data, "jobs.json");
     this.jobs = existsSync(this.file)
       ? JSON.parse(readFileSync(this.file, "utf8"))
@@ -534,6 +536,7 @@ export class DownloadQueue {
       throw new Error("busy");
     if (job.deletedAt) return;
     rmSync(this.folder(job), { recursive: true, force: true });
+    this.shares.revokeFor("job", job.id);
     job.deletedAt = new Date().toISOString();
     job.deletedBy = deletedBy;
     job.hasFiles = false;
@@ -546,6 +549,7 @@ export class DownloadQueue {
   close() {
     this.stopping = true;
     this.statistics.close();
+    this.shares.close();
     if (this.saveTimer) this.save();
     clearTimeout(this.cleanupTimer);
     this.kill();
@@ -673,7 +677,7 @@ export class DownloadQueue {
     }
   }
 
-  reserveArchive(job, userId = job.userId) {
+  reserveArchive(job, userId = job.userId, recordUsage = true) {
     if (this.expired(job)) throw Object.assign(new Error('Архив удалён.'), { statusCode: 410 });
     const counted = job.retentionMode === 'downloads';
     const summary = job.kind === 'lyrics-upload' ? null : archiveStatistics(join(this.folder(job), '.qws-archive.zip'));
@@ -689,7 +693,7 @@ export class DownloadQueue {
       if (remaining) this.archiveTransfers.set(job.id, remaining);
       else this.archiveTransfers.delete(job.id);
       if (success) {
-        if (job.kind !== 'lyrics-upload') {
+        if (recordUsage && job.kind !== 'lyrics-upload') {
           try { this.statistics.recordDownload(userId, summary); }
           catch { console.error('Unable to save download statistics.'); }
         }
@@ -752,6 +756,7 @@ export class DownloadQueue {
       try {
         // Remove only this job's generated UUID directory, never settings or a whole downloads root.
         rmSync(this.folder(job), { recursive: true, force: true });
+        this.shares.revokeFor("job", job.id);
         job.expiredAt = new Date(now).toISOString();
         job.hasFiles = false;
         delete job.cleanupError;

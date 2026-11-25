@@ -16,6 +16,7 @@ const emit = defineEmits<{ changed: [] }>();
 const baseURL = useRuntimeConfig().app.baseURL.replace(/\/?$/, "/");
 const api = $fetch.create({ baseURL });
 const files = ref<Archive[]>([]);
+const sharing = ref<Archive | null>(null);
 const search = ref("");
 const searchInput = ref<HTMLInputElement | null>(null);
 const error = ref("");
@@ -203,6 +204,7 @@ async function retry(file: Archive) {
                 >
                   <AppIcon name="trash" />
                 </button>
+                <button v-if="!management && file.status !== 'archiving' && !file.archiveError" type="button" class="icon-button" :aria-label="`Поделиться: ${file.name}`" @click="sharing = file"><AppIcon name="link" /></button>
                 <a
                   v-if="!management && file.status !== 'archiving' && !file.archiveError"
                   class="icon-button"
@@ -253,6 +255,7 @@ async function retry(file: Archive) {
       </div>
     </form>
   </dialog>
+  <ShareArchive v-if="sharing" :job-id="sharing.id" :title="sharing.title" @close="sharing = null" />
 </template>
 
 <style scoped>

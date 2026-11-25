@@ -1,6 +1,28 @@
 // Newest first. Every app update needs a new unique id and factual release notes.
 export const releases = [
   {
+    id: '2026-11-25-public-archives', version: '1.3.0', date: '2026-11-25', title: 'Внешние ссылки на архивы',
+    summary: 'Архивом можно поделиться через отдельную страницу скачивания без входа в приложение.',
+    sections: [{ title: 'Поделиться ZIP', items: [
+      'В разделе «Архивы» появилась кнопка «Поделиться». Ссылка действует 1, 6 или 24 часа, но не дольше срока хранения архива; её можно отозвать.',
+      'Публичная страница показывает обложку, название, исполнителя, длительность, размер ZIP и логин владельца. Для подборок показываются число треков и общая длительность, если теги позволяют её определить.',
+      'Ссылка открывает только выбранный ZIP, не авторизует посетителя и не даёт доступ к другим архивам или аккаунту. Публичная страница отделена от личного кабинета.',
+      'Удаление архива, исчерпание его лимита, отключение владельца или отзыв закрывают ссылку. Завершённые скачивания расходуют общий лимит архива; HEAD и прерванные передачи — нет.',
+      'Ключи хранятся как хеши. Для публичных ответов отключены кеширование, индексация и передача referrer; пример nginx исключает ссылки из журналов. Проверены права, изоляция аккаунтов, срок, подмена и отзыв активной передачи.',
+    ] }],
+    english: {
+      title: 'Public archive links',
+      summary: 'Share a ZIP through a dedicated download page without signing the recipient into the application.',
+      sections: [{ title: 'Share a ZIP', items: [
+        'Archives now offers Share. Links expire after 1, 6 or 24 hours, never outlive the archive, and can be revoked.',
+        'The public page shows artwork, title, artist, duration, ZIP size and the sharing username. Multi-track archives show a track count and total duration when metadata is available.',
+        'A link grants access to exactly one ZIP. It does not authenticate its recipient or expose other archives or account APIs. Public rendering is isolated from the private workspace.',
+        'Archive deletion, download-limit exhaustion, owner disablement and revocation close access. Completed public downloads consume the existing archive limit; HEAD and aborted transfers do not.',
+        'Keys are stored as hashes. Public responses disable caching, indexing and referrers; the nginx example excludes share URLs from logs. Tests cover ownership, account isolation, expiry, tampering and active-stream revocation.',
+      ] }],
+    },
+  },
+  {
     id: '2026-11-25-track-batches', version: '1.2.0', date: '2026-11-25', title: 'Пакетная загрузка треков',
     summary: 'Выбранные в поиске треки объединяются в одно задание и один ZIP.',
     sections: [{ title: 'Подборки треков', items: [
