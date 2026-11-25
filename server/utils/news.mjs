@@ -1,6 +1,26 @@
 // Newest first. Every app update needs a new unique id and factual release notes.
 export const releases = [
   {
+    id: '2026-11-25-track-batches', version: '1.2.0', date: '2026-11-25', title: 'Пакетная загрузка треков',
+    summary: 'Выбранные в поиске треки объединяются в одно задание и один ZIP.',
+    sections: [{ title: 'Подборки треков', items: [
+      'Во вкладке «Треки» можно выбрать до 50 песен и скачать подборку одним заданием с общими настройками качества, формата, текстов и хранения.',
+      'OrpheusDL запускается один раз и переиспользует подключение Qobuz для последовательной загрузки всех треков пакета.',
+      'Подборку можно раскрыть: видны состояния песен и ошибки. Повтор отдельного трека сохраняется отдельным ZIP, как и у альбомов.',
+      'Ошибки отдельных треков не удаляют успешные файлы. Песни с одинаковыми названиями сохраняются в отдельных папках; альбомы и дискографии остаются самостоятельными заданиями.',
+    ] }],
+    english: {
+      title: 'Batch track downloads',
+      summary: 'Selected search tracks now share one download job and one ZIP archive.',
+      sections: [{ title: 'Track batches', items: [
+        'Select up to 50 songs in Tracks and queue one batch with shared quality, format, lyrics and retention settings.',
+        'OrpheusDL runs once and reuses its authenticated Qobuz client while downloading batch tracks sequentially.',
+        'Expand the batch to inspect per-track statuses and errors. Single-track retries retain the job settings and produce a separate ZIP, matching album retries.',
+        'Individual track failures preserve successful files. Separate folders prevent same-title songs from overwriting one another; albums and artist discographies remain separate jobs.',
+      ] }],
+    },
+  },
+  {
     id: '2026-11-24-usage-statistics', version: '1.1.0', date: '2026-11-24', title: 'Статистика скачиваний',
     summary: 'Личные счётчики архивов, треков и жанров; администратор видит сводку всех пользователей.',
     sections: [{ title: 'Использование приложения', items: [

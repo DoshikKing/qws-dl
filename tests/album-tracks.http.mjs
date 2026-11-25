@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:net';
 
-test('album tracks HTTP: owner-only manifest and retries, separate ZIP, persistence and base path', async () => {
+for (const batch of [false,true]) test(`${batch ? 'batch' : 'album'} tracks HTTP: owner-only manifest and retries, separate ZIP, persistence and base path`, async () => {
   const base = await mkdtemp(join(tmpdir(), 'qws-album-http-'));
   const root = join(base, 'orpheus');
   const data = join(base, 'data');
@@ -59,7 +59,9 @@ from pathlib import Path
 if sys.argv[1] != '-u':
     os.execv(${JSON.stringify(actualPython)}, [${JSON.stringify(actualPython)}, *sys.argv[1:]])
 folder = Path(os.environ['DOWNLOAD_DIR'])
-if '/album/' in sys.argv[-2]:
+if '/album/' in sys.argv[-2] or sys.argv[-2].startswith('['):
+    if sys.argv[-2].startswith('['):
+        assert json.loads(sys.argv[-2]) == ['https://open.qobuz.com/track/11','https://open.qobuz.com/track/22','https://open.qobuz.com/track/33']
     (folder / '.qws-metadata.json').write_text(json.dumps({'title': 'Автор - Альбом', 'tracks': [
         {'id': '11', 'title': 'Готовая песня', 'artist': 'Автор', 'status': 'completed'},
         {'id': '22', 'title': 'Ошибка загрузки', 'artist': 'Автор', 'status': 'failed', 'error': 'Соединение прервано.'},
@@ -82,9 +84,14 @@ time.sleep(0.5)
     };
     const alice = await register('alice');
     const bob = await register('bob');
-    const added = await request('/api/jobs', alice, 'POST', { url: 'https://open.qobuz.com/album/123', quality: 'lossless', retentionHours: 3, lyrics: true, outputFormat: 'opus', formatOptions: {bitrate:96,mode:'cbr',compression:0} });
+    const added = await request('/api/jobs', alice, 'POST', { ...(batch ? {urls:['https://open.qobuz.com/track/11','https://open.qobuz.com/track/22','https://open.qobuz.com/track/33']} : {url:'https://open.qobuz.com/album/123'}), quality: 'lossless', retentionHours: 3, lyrics: true, outputFormat: 'opus', formatOptions: {bitrate:96,mode:'cbr',compression:0} });
     assert.equal(added.status, 200);
     const album = await added.json();
+    if (batch) {
+      assert.equal(album.kind,'qobuz-batch'); assert.equal(album.urls.length,3);
+      for (const body of [{urls:[]},{urls:['https://evil.test/track/1']},{urls:['https://open.qobuz.com/album/1']},{urls:'invalid'},{urls:['https://open.qobuz.com/track/1'],url:'https://open.qobuz.com/track/2'}])
+        assert.equal((await request('/api/jobs',alice,'POST',body)).status,400);
+    }
     const path = `/api/jobs/${album.id}/tracks`;
     await until(async () => (await (await request(path, alice)).json()).tracks?.length === 3);
     assert.equal((await request(path)).status, 401);
@@ -116,6 +123,8 @@ time.sleep(0.5)
     assert.equal(list.tracks[1].error, 'Соединение прервано.');
     const finalAlbum = (await (await request('/api/jobs', alice)).json()).find(job => job.id === album.id);
     assert.equal(finalAlbum.downloadWarning, true);
+    const archiveResponse = await request(`/api/jobs/${album.id}/archive`,alice);
+    assert.equal(archiveResponse.status,200);await archiveResponse.arrayBuffer();
     assert.equal(finalAlbum.trackFailureOnly, true);
     assert.equal(list.tracks[1].retry.status, 'completed');
     assert.equal(JSON.parse(await readFile(join(data, 'jobs.json'), 'utf8')).find(job => job.id === album.id).tracks.length, 3);

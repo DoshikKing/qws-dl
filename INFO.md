@@ -589,3 +589,21 @@ reconstructed. The UI shows the collection start date. Aggregate-only records in
 private `DATA_DIR/usage.sqlite3` survive job-history pruning and archive removal;
 include this file in backups. Keep DATA_DIR private. Genre lists show the top 20
 plus an aggregated remainder. Native SQLite needs Node 22.13+ (included in Docker).
+
+
+## Track batches
+
+Selected Tracks search results are sent as one `POST /api/jobs` request with
+`urls` (1–50 Qobuz track URLs), instead of `url`. Mixed collections, empty batches,
+arbitrary hosts and simultaneous `url`/`urls` are rejected before queuing. Canonical
+duplicate URLs are removed. A batch belongs to one account and has one common
+byte/time budget and one set of format, lyrics and retention settings.
+
+One Python runner invokes the pinned Orpheus CLI with all URLs. Its native module
+cache reuses one authenticated Qobuz client; downloads are sequential. Each track
+has an indexed id directory to avoid filename collisions. Optional lyrics and
+conversion run once over the completed output, followed by one archive. There is
+no new authentication retry mechanism or extra parallelism. Per-track failures
+continue the batch; authentication/infrastructure failures stop it. The existing
+track-list and retry endpoints enforce ownership for batches too. A retry creates
+a separate single-track job and ZIP. Albums/artists retain their existing behavior.

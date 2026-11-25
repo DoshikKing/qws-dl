@@ -82,7 +82,7 @@ watch(() => props.status, load);
         {{ ['queued', 'running'].includes(status) ? 'Список появится после получения данных альбома.' : 'Список недоступен для этой загрузки. Он сохраняется для новых заданий.' }}
       </p>
       <template v-if="tracks.length">
-        <p class="section-note">Повторный трек скачивается с настройками альбома и сохраняется отдельным ZIP в очереди.</p>
+        <p class="section-note">Повторный трек скачивается с настройками задания и сохраняется отдельным ZIP в очереди.</p>
         <ol class="album-track-list">
           <li v-for="track in tracks" :key="track.id" class="album-track">
             <span class="track-number" aria-hidden="true">{{ track.number }}</span>

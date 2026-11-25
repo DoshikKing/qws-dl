@@ -215,9 +215,15 @@ export class DownloadQueue {
     formatOptions = {},
   ) {
     if (typeof lyrics !== "boolean") throw new Error("Параметр текстов должен быть логическим значением.");
-    url = normalizeUrl(url);
+    let urls;
+    if (Array.isArray(url)) {
+      if (!url.length || url.length > 50) throw new Error('В пакете должно быть от 1 до 50 треков.');
+      urls = [...new Set(url.map(normalizeUrl))];
+      if (urls.some(value => !new URL(value).pathname.startsWith('/track/'))) throw new Error('Пакет поддерживает только ссылки на треки.');
+      url = urls[0];
+    } else url = normalizeUrl(url);
     if (!qualities.includes(quality)) throw new Error("Неизвестное качество.");
-    return this.enqueue({ url, quality, ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit, 24, loadDefaults(this.settings).downloadRetentionHours), userId, lyrics, outputFormat, formatOptions });
+    return this.enqueue({ url, urls, kind: urls ? 'qobuz-batch' : 'qobuz', title: urls ? `Подборка треков · ${urls.length}` : undefined, quality, ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit, 24, loadDefaults(this.settings).downloadRetentionHours), userId, lyrics, outputFormat, formatOptions });
   }
 
   addUpload(filename, retentionHours, userId, metadata = {}, retention = {}) {
@@ -227,7 +233,7 @@ export class DownloadQueue {
       kind: "lyrics-upload", filename, title: filename, metadata, status: "uploading" });
   }
 
-  enqueue({ url, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, parentJobId, parentTrackId, retentionMode = "time", downloadLimit = 1, downloadRetentionHours = 168, outputFormat = "original", formatOptions = {}, status = "queued" }) {
+  enqueue({ url, urls, quality, retentionHours, userId, lyrics, kind = "qobuz", filename, title, metadata, parentJobId, parentTrackId, retentionMode = "time", downloadLimit = 1, downloadRetentionHours = 168, outputFormat = "original", formatOptions = {}, status = "queued" }) {
     retentionPolicy(retentionMode, retentionHours, downloadLimit, kind === "lyrics-upload" ? 5 : 24, downloadRetentionHours);
     validateOutputFormat(outputFormat);
     formatOptions = normalizeFormatOptions(outputFormat, formatOptions);
@@ -251,7 +257,7 @@ export class DownloadQueue {
     const job = {
       id: randomUUID(),
       userId,
-      url,
+      url, urls,
       quality, outputFormat, formatOptions,
       lyrics,
       kind, filename, title, metadata, parentJobId, parentTrackId,
@@ -378,7 +384,7 @@ export class DownloadQueue {
       upload
         ? ["-u", resolve("scripts/process-upload.py"), folder, job.filename,
           join(this.settings.data, "lyrics.sqlite3"), JSON.stringify(job.metadata || {})]
-        : ["-u", this.settings.runner, this.settings.root, job.url, job.quality],
+        : ["-u", this.settings.runner, this.settings.root, job.kind === "qobuz-batch" ? JSON.stringify(job.urls) : job.url, job.quality],
       {
         cwd: upload ? process.cwd() : this.settings.root,
         detached: true,
@@ -556,7 +562,7 @@ export class DownloadQueue {
   }
 
   readTrackMetadata(job) {
-    if (!job.url?.includes('/album/')) return;
+    if (job.kind !== 'qobuz-batch' && !job.url?.includes('/album/')) return;
     try {
       const file = join(this.folder(job), '.qws-metadata.json');
       const stat = lstatSync(file);
@@ -577,7 +583,7 @@ export class DownloadQueue {
   }
 
   albumOutcome(job) {
-    const album = job.url?.includes('/album/');
+    const album = job.kind === 'qobuz-batch' || job.url?.includes('/album/');
     const failedTracks = album && job.tracks?.some((track) => track.status === 'failed');
     return {
       downloadWarning: !!(job.status === 'failed' && failedTracks && job.tracks.some((track) => track.status === 'completed')),
@@ -597,7 +603,7 @@ export class DownloadQueue {
   }
 
   retryTrack(job, trackId, user) {
-    if (!this.canAccess(job, user) || !job.url?.includes('/album/'))
+    if (!this.canAccess(job, user) || (job.kind !== 'qobuz-batch' && !job.url?.includes('/album/')))
       throw Object.assign(new Error('Альбом не найден.'), { statusCode: 404 });
     const track = this.albumTracks(job).find((item) => item.id === trackId);
     if (!track) throw Object.assign(new Error('Трек не найден.'), { statusCode: 404 });

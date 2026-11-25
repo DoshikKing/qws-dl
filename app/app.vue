@@ -129,7 +129,7 @@ const mediaTypes: Record<string, string> = {
   interpreter: "Исполнитель",
 };
 const mediaType = (job: Job) =>
-  job.kind === "lyrics-upload" ? "Свой файл" : mediaTypes[job.url.split("/")[3] || ""] || "Qobuz";
+  job.kind === "qobuz-batch" ? "Подборка" : job.kind === "lyrics-upload" ? "Свой файл" : mediaTypes[job.url.split("/")[3] || ""] || "Qobuz";
 const jobTitle = (job: Job) =>
   job.title || `${mediaType(job)} · ${job.url.split("/").pop()}`;
 const archiveUrl = (job: Job) => `${baseURL}api/jobs/${job.id}/archive`;
@@ -553,7 +553,7 @@ onBeforeUnmount(() => clearInterval(timer));
                             />
                           </div>
                           <div class="item-description">
-                            <strong v-if="job.kind === 'lyrics-upload'" class="item-title">{{ jobTitle(job) }}</strong>
+                            <strong v-if="job.kind === 'lyrics-upload' || job.kind === 'qobuz-batch'" class="item-title">{{ jobTitle(job) }}</strong>
                             <a
                               v-else
                               class="item-title"
@@ -642,7 +642,7 @@ onBeforeUnmount(() => clearInterval(timer));
                           {{ job.error }}
                         </p>
                         <AlbumTracks
-                          v-if="job.kind !== 'lyrics-upload' && job.url.includes('/album/')"
+                          v-if="job.kind === 'qobuz-batch' || (job.kind !== 'lyrics-upload' && job.url.includes('/album/'))"
                           :job-id="job.id" :status="job.status" :ready="status?.ready || false"
                           @queued="refresh"
                         />

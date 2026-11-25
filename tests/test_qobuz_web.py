@@ -58,6 +58,61 @@ class WebLoginTest(unittest.TestCase):
             ({'lossless_streaming': True}, True), ({'lossless_streaming': 'true'}, None)]:
             self.assertIs(subscription_summary({'user': {'credential': {'parameters': flags}}})['accessActive'], expected)
 
+    def test_batch_runner_uses_native_cli_one_login_and_keeps_partial_results(self):
+        import tempfile
+        from types import SimpleNamespace
+        from orpheus.music_downloader import Downloader
+        from modules.qobuz.interface import ModuleInterface
+        import modules.qobuz.interface as api_module
+        previous_dir, previous_path = Path.cwd(), list(sys.path)
+        original_api = api_module.Qobuz
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'modules/qobuz').mkdir(parents=True)
+            (root / 'modules/qobuz/interface.py').write_text('# discover the real pinned module')
+            (root / 'orpheus.py').write_text('import runpy\nrunpy.run_path(' + repr(str(ROOT / '.runtime/orpheusdl/orpheus.py')) + ', run_name="__main__")')
+            folder = root / 'output'
+            folder.mkdir()
+            urls = [f'https://open.qobuz.com/track/{value}' for value in ['11', '22', '33']]
+            def info(module, track_id, *args, **kwargs):
+                module.session.get_track(track_id)
+                if track_id == '22':
+                    raise ValueError('private-provider-response')
+                return SimpleNamespace(name='Same title', artists=['Same artist'])
+            def download(downloader, track_id, *args, **kwargs):
+                downloader.service.get_track_info(track_id)
+                downloader.service.session.get_file_url(track_id, 27)
+                Path(downloader.path, 'same.flac').write_text(track_id)
+                print(f'=== Track {track_id} downloaded ===')
+            try:
+                from orpheus.core import Orpheus
+                os.chdir(root)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    try:
+                        Orpheus(False)
+                    except SystemExit:
+                        pass
+                runner = runpy.run_path(str(ROOT / 'scripts/run-orpheus.py'))
+                runner['main'].__globals__['install_network_safety'] = lambda: None
+                runner['main'].__globals__['install_download_safety'] = lambda directory: None
+                sink = io.StringIO()
+                with patch.dict(os.environ, {'DOWNLOAD_DIR': str(folder), 'QWS_OUTPUT_FORMAT': 'original', 'QWS_LYRICS': '0'}), \
+                     patch.object(sys, 'argv', ['runner', str(root), json.dumps(urls), 'hifi']), \
+                     patch.object(sys, '__stdout__', sink), contextlib.redirect_stdout(sink), \
+                     patch.object(ModuleInterface, 'get_track_info', info), patch.object(Downloader, 'download_track', download):
+                    with self.assertRaises(SystemExit) as result:
+                        runner['main']()
+                    self.assertEqual(result.exception.code, 2)
+                self.assertEqual(self.login_calls, 1)
+                self.assertEqual([p.read_text() for p in sorted(folder.glob('*/same.flac'))], ['11', '33'])
+                data = json.loads((folder / '.qws-metadata.json').read_text())
+                self.assertEqual([track['status'] for track in data['tracks']], ['completed', 'failed', 'completed'])
+                self.assertNotIn('private-provider-response', sink.getvalue())
+            finally:
+                api_module.Qobuz = original_api
+                os.chdir(previous_dir)
+                sys.path[:] = previous_path
+
     def test_refresh_worker_protocol_returns_rotation_or_safe_expiry(self):
         previous_logging = logging.root.manager.disable
         try:

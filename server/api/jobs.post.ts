@@ -12,10 +12,11 @@ export default defineEventHandler(async (event) => {
   const body = await readJsonBody(event);
   const user = requireCurrentUser(event);
   try {
+    if (body?.urls !== undefined && (!Array.isArray(body.urls) || body.url !== undefined)) throw new Error('Укажите ссылки пакета без отдельного URL.');
     const queue = getQueue();
     const defaults = loadDefaults(queue.settings);
     return queue.add(
-      body?.url,
+      body?.urls === undefined ? body?.url : body.urls,
       body?.quality ?? defaults.quality,
       body?.retentionHours ?? defaults.retentionHours,
       user.id,

@@ -129,3 +129,8 @@ track counts as separate labelled totals, followed by genre bars with readable
 counts. Administrators select a username to inspect its genres. Include empty,
 loading, retry and incomplete-history states and the collection start date.
 Statistics must not reveal another account through the personal API.
+
+Tracks selected in catalog search form one batch with one ZIP and shared options.
+Use «Скачать подборку» and confirm the selected track count. Batches reuse the
+album track disclosure, error states and individual retry behavior. Albums and
+artists remain separate jobs. Preserve selection when a batch request fails.

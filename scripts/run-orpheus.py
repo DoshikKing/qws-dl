@@ -12,10 +12,44 @@ from media_title import install_title_reporter
 from worker_safety import install_network_safety, install_download_safety
 
 
+def validate_urls(value):
+    if not value.startswith('['):
+        return None
+    urls = json.loads(value)
+    if not isinstance(urls, list) or not 1 <= len(urls) <= 50 or any(not isinstance(url, str) for url in urls) or len(set(urls)) != len(urls):
+        raise ValueError('Invalid track batch')
+    if any(not isinstance(url, str) or not re.fullmatch(r'https://open\.qobuz\.com/track/[a-zA-Z0-9]+', url) for url in urls):
+        raise ValueError('Invalid track batch')
+    return urls
+
+
+def install_batch_downloads(urls):
+    from orpheus.music_downloader import Downloader
+    original = Downloader.download_track
+    positions = {url.rsplit('/', 1)[-1]: index for index, url in enumerate(urls, 1)}
+
+    def download(self, track_id, *args, **kwargs):
+        previous = self.path
+        folder = Path(os.environ['DOWNLOAD_DIR']) / f'{positions[str(track_id)]:02d}-{track_id}'
+        folder.mkdir(parents=True, exist_ok=True)
+        self.path = str(folder) + '/'
+        try:
+            return original(self, track_id, *args, **kwargs)
+        except QobuzWebError:
+            raise  # Authentication/infrastructure errors stop the batch.
+        except Exception:
+            print(f'=== Track {track_id} failed ===', flush=True)
+        finally:
+            self.path = previous
+    Downloader.download_track = download
+
+
 def main():
     if len(sys.argv) != 4 or sys.argv[3] not in {'hifi', 'lossless', 'high'}:
         raise ValueError('Expected: run-orpheus.py ORPHEUS_DIR QOBUZ_URL QUALITY')
     root, url, quality = Path(sys.argv[1]).resolve(), sys.argv[2], sys.argv[3]
+    urls = validate_urls(url)
+    batch = urls is not None
     output_format = os.environ.get('QWS_OUTPUT_FORMAT', 'original')
     try:
         format_options = normalize_options(output_format, json.loads(os.environ.get('QWS_FORMAT_OPTIONS', '{}')))
@@ -76,11 +110,13 @@ def main():
             return False
 
     from modules.qobuz.interface import ModuleInterface
-    observe = install_title_reporter(ModuleInterface, url)
+    observe = install_title_reporter(ModuleInterface, urls if batch else url)
+    if batch:
+        install_batch_downloads(urls)
 
     output = Output()
     sys.stdout = output
-    sys.argv = ['orpheus.py', '-o', os.environ['DOWNLOAD_DIR'], url]
+    sys.argv = ['orpheus.py', '-o', os.environ['DOWNLOAD_DIR'], *(urls if batch else [url])]
     runpy.run_path(str(root / 'orpheus.py'), run_name='__main__')
     convert_downloads(os.environ['DOWNLOAD_DIR'], output_format, format_options)
     if os.environ.get('QWS_LYRICS') == '1':

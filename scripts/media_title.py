@@ -8,11 +8,15 @@ from urllib.parse import urlparse
 
 
 def install_title_reporter(module, url):
-    kind, media_id = urlparse(url).path.strip('/').split('/')
+    batch = isinstance(url, list)
+    urls = url if batch else [url]
+    kind, media_id = urlparse(urls[0]).path.strip('/').split('/')
     kind = 'artist' if kind == 'interpreter' else kind
     method_name = f'get_{kind}_info'
     original = getattr(module, method_name)
-    metadata = {}
+    metadata = {'title': f'Подборка треков · {len(urls)}', 'tracks': [
+        {'id': value.rsplit('/', 1)[-1], 'title': f'Трек {index}', 'artist': '', 'number': index, 'status': 'pending'}
+        for index, value in enumerate(urls, 1)]} if batch else {}
     current_track = None
     download_error = None
     target = Path(os.environ['DOWNLOAD_DIR']) / '.qws-metadata.json'
@@ -53,7 +57,22 @@ def install_title_reporter(module, url):
 
     @wraps(original)
     def get_info(self, requested_id, *args, **kwargs):
-        info = original(self, requested_id, *args, **kwargs)
+        nonlocal current_track, download_error
+        if batch:
+            current_track, download_error = str(requested_id), None
+            update(requested_id, 'running')
+        try:
+            info = original(self, requested_id, *args, **kwargs)
+        except Exception:
+            if batch:
+                update(requested_id, 'failed', 'Не удалось получить данные трека Qobuz.')
+            raise
+        if batch:
+            track = next((item for item in metadata['tracks'] if item['id'] == str(requested_id)), None)
+            if track:
+                track.update(title=clean(info.name), artist=clean(', '.join(info.artists)))
+                save()
+            return info
         if str(requested_id) == media_id:
             artist = (', '.join(info.artists) if kind == 'track' else
                       getattr(info, 'artist', None) or getattr(info, 'creator', None))
@@ -80,6 +99,8 @@ def install_title_reporter(module, url):
         return info
 
     setattr(module, method_name, get_info)
+    if batch:
+        save()
 
     if kind == 'album' and hasattr(module, 'get_track_info'):
         original_track = module.get_track_info

@@ -143,12 +143,19 @@ async function addSelected() {
   const target = state.value;
   if (!target.selected.length || busy.value || props.disabled) return;
   const ids = [...target.selected];
+  const type = activeType.value;
   const options = { outputFormat: outputFormat.value, formatOptions: normalizeFormatOptions(outputFormat.value, formatSettings.value[outputFormat.value] || {}), quality: quality.value, retentionHours: retention.value, retentionMode: retentionMode.value, downloadLimit: downloadLimit.value, lyrics: lyrics.value };
   adding.value = true;
   added.value = 0;
   target.error = target.notice = "";
   try {
-    for (const id of ids) {
+    if (type === 'tracks') {
+      const urls = ids.map(id => target.items.find(item => item.id === id)!.url);
+      await api('/api/jobs', { method: 'POST', body: { urls, ...options } });
+      target.queued.push(...ids);
+      target.selected = target.selected.filter(value => !ids.includes(value));
+      added.value = ids.length;
+    } else for (const id of ids) {
       if (disposed) break;
       const item = target.items.find(item => item.id === id)!;
       await api("/api/jobs", { method: "POST", body: { url: item.url, ...options } });
@@ -160,7 +167,7 @@ async function addSelected() {
     target.error = message(e);
   } finally {
     if (added.value && !disposed) {
-      target.notice = `Добавлено в очередь: ${added.value}.`;
+      target.notice = type === 'tracks' ? `Треков в подборке: ${added.value}. Один общий ZIP.` : `Добавлено в очередь: ${added.value}.`;
       emit("queued");
     }
     adding.value = false;
@@ -335,7 +342,7 @@ async function addSelected() {
               />{{
                 adding
                   ? `Добавление: ${added} / ${added + state.selected.length}`
-                  : activeType === 'artists' ? `Добавить дискографии (${state.selected.length})` : `Добавить в очередь (${state.selected.length})`
+                  : activeType === 'artists' ? `Добавить дискографии (${state.selected.length})` : activeType === 'tracks' ? `Скачать подборку (${state.selected.length})` : `Добавить в очередь (${state.selected.length})`
               }}
             </button>
           </div>
@@ -344,7 +351,7 @@ async function addSelected() {
             <span>Добавлять тексты песен<span class="field-note">Синхронизированный текст и файл .lrc, если найдены.</span></span>
           </label>
           <p class="field-note">
-            {{ activeType === 'tracks' ? 'Каждый трек' : activeType === 'albums' ? 'Каждый альбом' : 'Каждая дискография' }} — отдельное задание и ZIP. {{ retentionMode === 'downloads' ? `ZIP удалится после ${downloadLimit} скачиваний или через ${props.downloadRetentionHours || 168} ч — что наступит раньше.` : `Архив хранится ${retention} ч после завершения.` }}
+            {{ activeType === 'tracks' ? 'Выбранные треки — одно задание и общий ZIP.' : activeType === 'albums' ? 'Каждый альбом — отдельное задание и ZIP.' : 'Каждая дискография — отдельное задание и ZIP.' }} {{ retentionMode === 'downloads' ? `ZIP удалится после ${downloadLimit} скачиваний или через ${props.downloadRetentionHours || 168} ч — что наступит раньше.` : `Архив хранится ${retention} ч после завершения.` }}
           </p>
         </div>
       </template>
