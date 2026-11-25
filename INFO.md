@@ -593,10 +593,13 @@ plus an aggregated remainder. Native SQLite needs Node 22.13+ (included in Docke
 
 ## Track batches
 
-Selected Tracks search results are sent as one `POST /api/jobs` request with
+A single selected Tracks search result uses `url` and a normal track job.
+Multiple selected results are sent as one `POST /api/jobs` request with
 `urls` (1–50 Qobuz track URLs), instead of `url`. Mixed collections, empty batches,
 arbitrary hosts and simultaneous `url`/`urls` are rejected before queuing. Canonical
-duplicate URLs are removed. A batch belongs to one account and has one common
+duplicate URLs are removed. One unique track is queued as a normal single-track
+job; only two or more unique tracks form a batch. Search sends `url` for one
+selected track and `urls` for several. A batch belongs to one account and has one common
 byte/time budget and one set of format, lyrics and retention settings.
 
 One Python runner invokes the pinned Orpheus CLI with all URLs. Its native module

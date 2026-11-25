@@ -89,6 +89,8 @@ time.sleep(0.5)
     const album = await added.json();
     if (batch) {
       assert.equal(album.kind,'qobuz-batch'); assert.equal(album.urls.length,3);
+      const singleResponse=await request('/api/jobs',alice,'POST',{urls:['https://open.qobuz.com/track/44','https://play.qobuz.com/track/44']});
+      assert.equal(singleResponse.status,200);const single=await singleResponse.json();assert.equal(single.kind,'qobuz');assert.equal(single.url,'https://open.qobuz.com/track/44');assert.ok(!single.urls);
       for (const body of [{urls:[]},{urls:['https://evil.test/track/1']},{urls:['https://open.qobuz.com/album/1']},{urls:'invalid'},{urls:['https://open.qobuz.com/track/1'],url:'https://open.qobuz.com/track/2'}])
         assert.equal((await request('/api/jobs',alice,'POST',body)).status,400);
     }

@@ -1,6 +1,24 @@
 // Newest first. Every app update needs a new unique id and factual release notes.
 export const releases = [
   {
+    id: '2026-11-25-single-track-selection', version: '1.3.1', date: '2026-11-25', title: 'Одиночный трек без подборки',
+    summary: 'Одна выбранная песня скачивается обычным заданием. Подборка создаётся для нескольких треков.',
+    sections: [{ title: 'Выбор треков', items: [
+      'Для одного выбранного трека поиск отправляет обычную ссылку и показывает кнопку «Скачать трек».',
+      'Два и больше трека объединяются в подборку с общей сессией Qobuz и ZIP. Настройки качества, формата, текстов и хранения сохраняются.',
+      'Сервер также обрабатывает пакет с одной уникальной ссылкой как обычный трек, в том числе после удаления повторов.',
+    ] }],
+    english: {
+      title: 'Single-track selection without a batch',
+      summary: 'One selected song now creates a normal track job. Batches are created for multiple tracks.',
+      sections: [{ title: 'Track selection', items: [
+        'Selecting one search track sends a normal URL and displays the Download track action.',
+        'Two or more tracks share a batch, authenticated Qobuz client and ZIP. Quality, format, lyrics and retention settings are preserved.',
+        'The server also treats a batch request containing one unique canonical URL as a normal track, including after deduplication.',
+      ] }],
+    },
+  },
+  {
     id: '2026-11-25-public-archives', version: '1.3.0', date: '2026-11-25', title: 'Внешние ссылки на архивы',
     summary: 'Архивом можно поделиться через отдельную страницу скачивания без входа в приложение.',
     sections: [{ title: 'Поделиться ZIP', items: [

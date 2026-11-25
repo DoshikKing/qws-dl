@@ -27,3 +27,17 @@ test('track batches are atomic, bounded, canonical and preserve owner, options a
     assert.deepEqual(queue.jobs.find(item=>item.id===job.id).urls,urls);
   }finally{queue?.close();await rm(data,{recursive:true,force:true});}
 });
+
+
+test('one unique track stays a normal job, including deduplicated batch requests',async()=>{
+  const data=await mkdtemp('/tmp/qws-single-track-');let queue;
+  try{
+    queue=new DownloadQueue({data,downloads:join(data,'downloads'),minFreeBytes:0});queue.stopping=true;
+    const url='https://open.qobuz.com/track/11';
+    for(const urls of [[url],[url,'https://play.qobuz.com/track/11']]){
+      const job=queue.add(urls,'lossless',3,'alice',true,{retentionMode:'downloads',downloadLimit:2},'opus',{bitrate:96});
+      assert.equal(job.kind,'qobuz');assert.equal(job.url,url);assert.equal(job.urls,undefined);assert.equal(job.title,undefined);
+      assert.equal(job.quality,'lossless');assert.equal(job.lyrics,true);assert.equal(job.outputFormat,'opus');assert.equal(job.downloadLimit,2);
+    }
+  }finally{queue?.close();await rm(data,{recursive:true,force:true});}
+});

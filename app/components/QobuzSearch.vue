@@ -151,7 +151,7 @@ async function addSelected() {
   try {
     if (type === 'tracks') {
       const urls = ids.map(id => target.items.find(item => item.id === id)!.url);
-      await api('/api/jobs', { method: 'POST', body: { urls, ...options } });
+      await api('/api/jobs', { method: 'POST', body: { ...(urls.length === 1 ? { url: urls[0] } : { urls }), ...options } });
       target.queued.push(...ids);
       target.selected = target.selected.filter(value => !ids.includes(value));
       added.value = ids.length;
@@ -167,7 +167,7 @@ async function addSelected() {
     target.error = message(e);
   } finally {
     if (added.value && !disposed) {
-      target.notice = type === 'tracks' ? `Треков в подборке: ${added.value}. Один общий ZIP.` : `Добавлено в очередь: ${added.value}.`;
+      target.notice = type === 'tracks' && ids.length > 1 ? `Треков в подборке: ${added.value}. Один общий ZIP.` : `Добавлено в очередь: ${added.value}.`;
       emit("queued");
     }
     adding.value = false;
@@ -342,7 +342,7 @@ async function addSelected() {
               />{{
                 adding
                   ? `Добавление: ${added} / ${added + state.selected.length}`
-                  : activeType === 'artists' ? `Добавить дискографии (${state.selected.length})` : activeType === 'tracks' ? `Скачать подборку (${state.selected.length})` : `Добавить в очередь (${state.selected.length})`
+                  : activeType === 'artists' ? `Добавить дискографии (${state.selected.length})` : activeType === 'tracks' ? state.selected.length > 1 ? `Скачать подборку (${state.selected.length})` : 'Скачать трек' : `Добавить в очередь (${state.selected.length})`
               }}
             </button>
           </div>
@@ -351,7 +351,7 @@ async function addSelected() {
             <span>Добавлять тексты песен<span class="field-note">Синхронизированный текст и файл .lrc, если найдены.</span></span>
           </label>
           <p class="field-note">
-            {{ activeType === 'tracks' ? 'Выбранные треки — одно задание и общий ZIP.' : activeType === 'albums' ? 'Каждый альбом — отдельное задание и ZIP.' : 'Каждая дискография — отдельное задание и ZIP.' }} {{ retentionMode === 'downloads' ? `ZIP удалится после ${downloadLimit} скачиваний или через ${props.downloadRetentionHours || 168} ч — что наступит раньше.` : `Архив хранится ${retention} ч после завершения.` }}
+            {{ activeType === 'tracks' ? 'Один трек — обычное задание. Несколько — подборка с общим ZIP.' : activeType === 'albums' ? 'Каждый альбом — отдельное задание и ZIP.' : 'Каждая дискография — отдельное задание и ZIP.' }} {{ retentionMode === 'downloads' ? `ZIP удалится после ${downloadLimit} скачиваний или через ${props.downloadRetentionHours || 168} ч — что наступит раньше.` : `Архив хранится ${retention} ч после завершения.` }}
           </p>
         </div>
       </template>

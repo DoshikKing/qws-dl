@@ -130,7 +130,8 @@ counts. Administrators select a username to inspect its genres. Include empty,
 loading, retry and incomplete-history states and the collection start date.
 Statistics must not reveal another account through the personal API.
 
-Tracks selected in catalog search form one batch with one ZIP and shared options.
+Two or more tracks selected in catalog search form one batch with one ZIP and shared options.
+A single selected track uses a normal track job and «Скачать трек».
 Use «Скачать подборку» and confirm the selected track count. Batches reuse the
 album track disclosure, error states and individual retry behavior. Albums and
 artists remain separate jobs. Preserve selection when a batch request fails.

@@ -223,6 +223,7 @@ export class DownloadQueue {
       urls = [...new Set(url.map(normalizeUrl))];
       if (urls.some(value => !new URL(value).pathname.startsWith('/track/'))) throw new Error('Пакет поддерживает только ссылки на треки.');
       url = urls[0];
+      if (urls.length === 1) urls = undefined;
     } else url = normalizeUrl(url);
     if (!qualities.includes(quality)) throw new Error("Неизвестное качество.");
     return this.enqueue({ url, urls, kind: urls ? 'qobuz-batch' : 'qobuz', title: urls ? `Подборка треков · ${urls.length}` : undefined, quality, ...retentionPolicy(retention.retentionMode, retentionHours, retention.downloadLimit, 24, loadDefaults(this.settings).downloadRetentionHours), userId, lyrics, outputFormat, formatOptions });
