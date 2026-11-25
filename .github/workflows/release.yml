@@ -34,6 +34,7 @@ jobs:
           set -euo pipefail
           tag=$(node scripts/release.mjs --tag)
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          target=$GITHUB_SHA
           existing=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$tag\") | [.draft, .target_commitish] | @tsv")
           if [ -n "$existing" ]; then
             read -r draft target <<< "$existing"
@@ -42,12 +43,17 @@ jobs:
               echo "$tag is already published; bump package.json and add bilingual news for the next release."
               exit 0
             fi
-            test "$target" = "$GITHUB_SHA"
+            # Resume the original source commit after a workflow-only repair.
+            [[ "$target" =~ ^[a-f0-9]{40}$ ]]
+            git merge-base --is-ancestor "$target" "$GITHUB_SHA"
+            git diff --quiet "$target" "$GITHUB_SHA" -- . ':(exclude).github/workflows/release.yml'
+            git checkout --detach "$target"
             echo 'draft=true' >> "$GITHUB_OUTPUT"
           fi
           if git show-ref --verify --quiet "refs/tags/$tag"; then
-            test "$(git rev-list -n 1 "$tag")" = "$GITHUB_SHA"
+            test "$(git rev-list -n 1 "$tag")" = "$target"
           fi
+          echo "target=$target" >> "$GITHUB_OUTPUT"
           echo 'publish=true' >> "$GITHUB_OUTPUT"
       - name: Install dependencies
         if: steps.version.outputs.publish == 'true'
@@ -66,12 +72,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
+          TARGET_SHA: ${{ steps.version.outputs.target }}
           DRAFT_EXISTS: ${{ steps.version.outputs.draft }}
         shell: bash
         run: |
           set -euo pipefail
           if [ "$DRAFT_EXISTS" != true ]; then
-            gh release create "$TAG" --target "$GITHUB_SHA" --title "QWS $TAG" --notes-file release/RELEASE_NOTES.en.md --draft
+            gh release create "$TAG" --target "$TARGET_SHA" --title "QWS $TAG" --notes-file release/RELEASE_NOTES.en.md --draft
           fi
-          gh release upload "$TAG" "release/qws-dl-$TAG-source.tar.gz" release/RELEASE_NOTES.en.md release/RELEASE_NOTES.ru.md release/SHA256SUMS --clobber
+          release_id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          [[ "$release_id" =~ ^[0-9]+$ ]]
+          for asset in "release/qws-dl-$TAG-source.tar.gz" release/RELEASE_NOTES.en.md release/RELEASE_NOTES.ru.md release/SHA256SUMS; do
+            name=$(basename "$asset")
+            read -r checksum rest < <(sha256sum "$asset")
+            remote=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" --jq ".[] | select(.name == \"$name\") | .digest")
+            if [ "$remote" != "sha256:$checksum" ]; then
+              gh release upload "$TAG" "$asset" --clobber
+              remote=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" --jq ".[] | select(.name == \"$name\") | .digest")
+              test "$remote" = "sha256:$checksum"
+            fi
+          done
           gh release edit "$TAG" --notes-file release/RELEASE_NOTES.en.md --draft=false --latest
