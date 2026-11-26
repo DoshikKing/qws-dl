@@ -138,12 +138,58 @@ def inspect(path):
                 'tracks': len(entries), 'cover': (preview or {}).get('cover')}
 
 
+def playlist(path):
+    with zipfile.ZipFile(path) as archive:
+        result = []
+        for index, (_, item) in enumerate(members(archive)):
+            value = details(archive, item, include_cover=False)
+            result.append({'id': index, 'title': value['title'], 'artist': value['artist'], 'duration': value['duration']})
+        return result
+
+
+def audio_preview(path, index):
+    import tempfile
+    import shutil
+    formats = {'.flac': 'flac', '.mp3': 'mp3', '.m4a': 'mov', '.ogg': 'ogg', '.opus': 'ogg',
+               '.ape': 'ape', '.tta': 'tta', '.dsf': 'dsf', '.wav': 'wav', '.aif': 'aiff', '.aiff': 'aiff'}
+    with zipfile.ZipFile(path) as archive:
+        entries = members(archive)
+        if not 0 <= index < len(entries):
+            raise ValueError('Unknown track')
+        item = entries[index][1]
+        if item.file_size > 512 * 1024**2:
+            raise ValueError('Preview input too large')
+        # An anonymous seekable file supports MP4/APE/DSD without extracting a
+        # user-controlled path. It is unlinked automatically, including on kill.
+        with tempfile.TemporaryFile() as source:
+            with archive.open(item) as member:
+                shutil.copyfileobj(member, source, length=1024 * 1024)
+            source.flush()
+            source.seek(0)
+            fmt = formats[PurePosixPath(item.filename).suffix.lower()]
+            options = ['-enable_drefs', '0', '-use_absolute_path', '0'] if fmt == 'mov' else []
+            command = ['ffmpeg', '-v', 'error', '-nostdin', '-threads', '1', '-filter_threads', '1',
+                       '-protocol_whitelist', 'file,pipe', '-format_whitelist', fmt, '-f', fmt, *options,
+                       '-i', '/proc/self/fd/' + str(source.fileno()), '-map', '0:a:0', '-t', '60',
+                       '-vn', '-sn', '-dn', '-map_metadata', '-1', '-ac', '2', '-ar', '44100',
+                       '-c:a', 'libmp3lame', '-b:a', '128k', '-threads', '1', '-f', 'mp3', 'pipe:1']
+            result = subprocess.run(command, pass_fds=(source.fileno(),), capture_output=True, timeout=20)
+            if result.returncode or not result.stdout or len(result.stdout) > 2 * 1024**2:
+                raise ValueError('Preview unavailable')
+            return result.stdout
+
+
 if __name__ == '__main__':
     from worker_safety import limit_upload_resources
     try:
         limit_upload_resources()
-        value = inspect(sys.argv[1])
-        print(json.dumps(value))
+        mode = sys.argv[2] if len(sys.argv) > 2 else 'inspect'
+        if mode == 'audio':
+            sys.stdout.buffer.write(audio_preview(sys.argv[1], int(sys.argv[3])))
+        else:
+            value = playlist(sys.argv[1]) if mode == 'tracks' else inspect(sys.argv[1])
+            print(json.dumps(value))
     except Exception:
-        print('{"error":"unavailable"}')
+        if len(sys.argv) < 3 or sys.argv[2] != 'audio':
+            print('{"error":"unavailable"}')
         raise SystemExit(1)

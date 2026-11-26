@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { open, lstat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve } from 'node:path';
@@ -67,3 +67,36 @@ export function publicMetadata(value:any) {
     expiresAt:new Date(Math.min(value.row.expires,Date.parse(value.job.expiresAt))).toISOString(),hasCover:!!value.row.cover};
 }
 export async function archiveIdentity(file:string) {const info=await lstat(file,{bigint:true});if(!info.isFile()||info.isSymbolicLink())throw unavailable();return fingerprint(info);}
+
+// Public transcoding is separate from the download worker and never reserves a ZIP download.
+let audioWorkers = 0;
+const audioClients = new Set<string>();
+export async function sharedAudioTool(event: H3Event, value: any, mode: 'tracks' | 'audio', index = '') {
+  if (event.node.res.destroyed) throw unavailable();
+  if (audioWorkers >= 2 || audioClients.has(value.client) || !takeLimit(`share-audio:${value.client}`, 12))
+    throw createError({ statusCode: 429, statusMessage: 'Прослушивание занято. Повторите позже.' });
+  audioWorkers++; audioClients.add(value.client);
+  try {
+    const result = await new Promise<Buffer>((done, reject) => {
+      const child = spawn(value.queue.settings.python, [resolve('scripts/share_archive.py'), '/dev/fd/3', mode, index], {
+        env: { ...workerEnvironment(), TMPDIR: value.queue.settings.downloads }, detached: true, stdio: ['ignore', 'pipe', 'ignore', value.handle.fd],
+      });
+      const chunks: Buffer[] = []; let size = 0;
+      const stop = () => { if (child.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* Already exited. */ } } };
+      const timeout = setTimeout(stop, 25000);
+      const validity = setInterval(() => { if (!value.valid()) stop(); }, 500);
+      const disconnected = () => { if (!event.node.res.writableEnded) stop(); };
+      event.node.res.once('close', disconnected);
+      child.stdout.on('data', (chunk: Buffer) => { size += chunk.length; if (size > 2 * 1024**2) stop(); else chunks.push(chunk); });
+      child.once('error', () => reject(unavailable()));
+      child.once('close', code => {
+        clearTimeout(timeout); clearInterval(validity); event.node.res.removeListener('close', disconnected);
+        stop(); // Also reap a decoder if its Python parent was killed or timed out.
+        if (code !== 0 || size > 2 * 1024**2 || !value.valid() || event.node.res.destroyed) reject(unavailable());
+        else done(Buffer.concat(chunks));
+      });
+    });
+    if (!value.valid() || fingerprint(await value.handle.stat({ bigint: true })) !== value.row.payload.fingerprint) throw unavailable();
+    return result;
+  } finally { audioWorkers--; audioClients.delete(value.client); }
+}

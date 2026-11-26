@@ -622,7 +622,7 @@ can be revoked. Managers cannot create links for another account's archive.
 `POST/GET /api/jobs/:id/shares` and `DELETE /api/shares/:id` require the current
 owner session, same-origin mutation rules and body/permission rechecks. Only
 `hours` is accepted on creation. Anonymous GET/HEAD access is allowlisted solely
-for `/api/shared/:key`, `/cover` and `/download`; the key is never accepted as an
+for `/api/shared/:key`, `/cover`, `/download`, `/tracks` and GET `/preview/:index`; the key is never accepted as an
 account cookie, bearer login, user id or file path. The `/s/:key` page mounts a
 separate component and makes no account or private-workspace requests.
 
@@ -666,3 +666,25 @@ HEAD/retention behavior, stream concurrency and active-transfer revocation at
 both `/` and `/dl/`. Browser checks cover untrusted text and absence of private
 requests. These checks establish the implemented boundary, not a guarantee that
 an arbitrary deployment or proxy configuration has no vulnerabilities.
+
+### Shared audio previews
+
+Public archive pages and the sharing dialog (after link creation) offer an explicit
+Listen action, a track selector for albums/batches, and native audio controls with
+preload=none and no autoplay. Existing share links work without recreation.
+GET /api/shared/:key/tracks lists only safe audio metadata; GET
+/api/shared/:key/preview/:index (0–9999, no query parameters) returns up to 60 seconds
+of MP3 at 128 kbps / 44.1 kHz / stereo. The original ZIP is unchanged; playback
+never reserves or consumes a ZIP download or adds download statistics.
+
+The same capability, owner, expiry, archive fingerprint, no-store, no-referrer and
+same-origin security boundaries apply. The decoder accepts only a safe ZIP_STORED
+member of up to 512 MiB, copied to a private anonymous temporary file on the download
+volume for seekable decoding. It never extracts a user-named path. Input format is
+forced, external MP4 references are disabled, protocols are restricted to file/pipe
+and output tags are removed. OS memory/CPU limits, a 2 MiB output cap and a 25-second
+deadline apply. At most two preparations run globally and one per client IP, with
+12 playlist/preview attempts per IP per minute. Revocation, expiry, owner disablement,
+archive deletion or client disconnect kills the decoder process group. The archive
+fingerprint is rechecked before responding. Already delivered bytes cannot be
+revoked. Unsupported, damaged or oversized tracks retain the ZIP download option.

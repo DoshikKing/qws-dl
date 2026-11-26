@@ -159,3 +159,11 @@ Modal scroll containment is progressive enhancement (non-overflowing containers
 are not yet handled by Safari); do not lock root overflow or duplicate native
 focus trapping. Keep existing dialog opening animation and native immediate close
 until exit transitions can preserve top-layer/focus behavior across browsers.
+
+Public archive sharing also offers «Прослушивание»: an explicit «Прослушать» action
+loads the track list, followed by a labelled native track select for multi-track
+archives and one native audio control with preload=none. Never autoplay or start
+transcoding on page load. Explain the 60-second limit and that previews do not
+consume ZIP download counts. Pause the old audio when changing tracks and on
+unmount/expiry. Reuse this surface in the owner dialog after link creation. Keep
+ZIP download as the primary action, readable error states, and 320px layouts.

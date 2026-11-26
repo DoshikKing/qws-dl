@@ -27,6 +27,7 @@ onBeforeUnmount(()=>{dialog.value?.close();previous?.focus();});
         <button class="primary-button" type="submit" :disabled="busy||loading">{{ busy ? 'Обработка…' : 'Создать ссылку' }}</button>
       </form>
       <div v-if="url" class="field share-result"><label for="share-url">Внешняя ссылка</label><input id="share-url" :value="url" readonly @focus="($event.target as HTMLInputElement).select()" /><button class="quiet-button" type="button" @click="copy">{{ copied ? 'Скопировано' : 'Копировать ссылку' }}</button><p class="field-note">Сохраните ссылку сейчас. После закрытия окна её можно только отозвать.</p></div>
+      <SharedAudioPreview v-if="url" :key="createdId" :token="url.split('/').pop() || ''" />
       <p v-if="error" class="form-error" role="alert">{{ error }}</p>
       <p v-if="loading" class="section-note" role="status">Получаем ссылки…</p>
       <div v-if="links.length" class="share-links"><h3>Действующие ссылки</h3><ul><li v-for="link in links" :key="link.id"><span>{{ link.id === createdId ? 'Новая ссылка · ' : '' }}До {{ date(link.expiresAt) }} · мск</span><button class="quiet-button" type="button" :disabled="busy" @click="revoke(link.id)">Отозвать</button></li></ul></div>

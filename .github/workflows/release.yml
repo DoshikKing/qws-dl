@@ -80,7 +80,12 @@ jobs:
           if [ "$DRAFT_EXISTS" != true ]; then
             gh release create "$TAG" --target "$TARGET_SHA" --title "QWS $TAG" --notes-file release/RELEASE_NOTES.en.md --draft
           fi
-          release_id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          # The release list can briefly lag behind successful draft creation.
+          for attempt in 1 2 3 4 5 6; do
+            release_id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+            if [[ "$release_id" =~ ^[0-9]+$ ]]; then break; fi
+            sleep "$attempt"
+          done
           [[ "$release_id" =~ ^[0-9]+$ ]]
           for asset in "release/qws-dl-$TAG-source.tar.gz" release/RELEASE_NOTES.en.md release/RELEASE_NOTES.ru.md release/SHA256SUMS; do
             name=$(basename "$asset")

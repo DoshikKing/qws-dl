@@ -1,6 +1,39 @@
 // Newest first. Every app update needs a new unique id and factual release notes.
 export const releases = [
   {
+    "id": "2026-11-26-shared-audio",
+    "version": "1.5.0",
+    "date": "2026-11-26",
+    "title": "Прослушивание по внешней ссылке",
+    "summary": "Перед скачиванием архива можно прослушать фрагмент песни.",
+    "sections": [
+      {
+        "title": "Предпрослушивание",
+        "items": [
+          "На странице внешней ссылки можно прослушать до 60 секунд выбранной песни перед скачиванием ZIP. Для альбома или подборки доступен выбор трека.",
+          "Такое же прослушивание есть в окне «Поделиться» после создания ссылки. Звук не запускается автоматически; аудио загружается только после Play.",
+          "Для совместимости браузеров фрагмент преобразуется в MP3. Исходный ZIP не изменяется; прослушивание не расходует лимит скачиваний и не увеличивает статистику.",
+          "Прослушивание доступно только для аудиофайлов этого архива и ограничено сроком ссылки. Отзыв, отключение владельца и удаление архива закрывают доступ, включая выполняющуюся подготовку фрагмента."
+        ]
+      }
+    ],
+    "english": {
+      "title": "Shared archive audio previews",
+      "summary": "Listen to a song preview before downloading a shared archive.",
+      "sections": [
+        {
+          "title": "Playback previews",
+          "items": [
+            "Public archive pages can play up to 60 seconds of a selected song before ZIP download. Albums and batches offer a track selector.",
+            "The sharing dialog also provides playback after creating a link. Audio never autoplays and is fetched only after Play.",
+            "Previews are converted to MP3 for browser compatibility. The original ZIP stays unchanged; previews do not consume download limits or add download statistics.",
+            "Playback is scoped to audio in that ZIP and the link lifetime. Revocation, owner disablement and archive deletion deny access and stop in-flight preview preparation."
+          ]
+        }
+      ]
+    }
+  },
+  {
     "id": "2026-11-26-modern-web",
     "version": "1.4.0",
     "date": "2026-11-26",

@@ -41,6 +41,7 @@ useHead({title:'Скачивание архива · QWS',meta:[{name:'robots',c
           <div v-if="archive.tracks > 1"><dt>Треков</dt><dd>{{ archive.tracks }}</dd></div>
           <div><dt>Архив ZIP</dt><dd>{{ (archive.size / 1024 / 1024).toLocaleString('ru-RU',{maximumFractionDigits:1}) }} МБ</dd></div>
         </dl>
+        <SharedAudioPreview :token="token" />
         <a class="primary-button shared-download" :href="`${base}api/shared/${token}/download`" download rel="noreferrer"><AppIcon name="download" />Скачать ZIP</a>
         <p class="section-note shared-expiry">Доступ до {{ expiry }} · мск. Владелец может закрыть его раньше.</p>
       </div>
