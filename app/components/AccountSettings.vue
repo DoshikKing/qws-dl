@@ -20,6 +20,7 @@ const error = ref("");
 const success = ref("");
 const copied = ref(false);
 const codeInput = ref<HTMLInputElement | null>(null);
+const confirmInput = ref<HTMLInputElement | null>(null);
 async function copy() {
   try {
     await navigator.clipboard.writeText(props.account.inviteCode);
@@ -33,6 +34,7 @@ async function changePassword() {
   error.value = success.value = "";
   if (password.value !== confirmation.value) {
     error.value = "Пароли не совпадают.";
+    confirmInput.value?.focus();
     return;
   }
   busy.value = true;
@@ -107,12 +109,14 @@ async function changePassword() {
     <div class="section-heading"><h2 id="password-heading">Пароль</h2></div>
     <form
       class="panel account-panel password-settings"
+      method="post"
       @submit.prevent="changePassword"
     >
       <div class="field">
         <label for="current-password">Текущий пароль</label
         ><input
           id="current-password"
+          name="currentPassword"
           v-model="current"
           type="password"
           autocomplete="current-password"
@@ -125,6 +129,8 @@ async function changePassword() {
         <label for="new-password">Новый пароль</label
         ><input
           id="new-password"
+          name="newPassword"
+          aria-describedby="new-password-hint"
           v-model="password"
           type="password"
           autocomplete="new-password"
@@ -133,12 +139,17 @@ async function changePassword() {
           maxlength="256"
           :disabled="busy"
         />
-        <p class="field-note">От 10 до 256 символов.</p>
+        <p id="new-password-hint" class="field-note">От 10 до 256 символов.</p>
       </div>
       <div class="field">
         <label for="confirm-password">Повторите пароль</label
         ><input
           id="confirm-password"
+          ref="confirmInput"
+          name="confirmPassword"
+          :aria-invalid="error === 'Пароли не совпадают.'"
+          :aria-describedby="error === 'Пароли не совпадают.' ? 'password-change-error' : undefined"
+          @input="error = ''"
           v-model="confirmation"
           type="password"
           autocomplete="new-password"
@@ -148,7 +159,7 @@ async function changePassword() {
           :disabled="busy"
         />
       </div>
-      <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+      <p v-if="error" id="password-change-error" class="form-error" role="alert">{{ error }}</p>
       <p v-if="success" class="form-success" role="status">{{ success }}</p>
       <button class="primary-button" :disabled="busy">
         <span v-if="busy" class="spinner" aria-hidden="true" />Изменить пароль

@@ -2,21 +2,26 @@
 type SharedArchive={title:string;artist:string;duration:number|null;tracks:number;size:number;sharedBy:string;expiresAt:string;hasCover:boolean};
 const props=defineProps<{token:string}>();
 const base=useRuntimeConfig().app.baseURL.replace(/\/?$/,'/');
-const api=$fetch.create({baseURL:base,credentials:'omit'});
-const archive=ref<SharedArchive|null>(null),loading=ref(true),error=ref(false),cover=ref('');
-let controller:AbortController;
+// Preserve per-client public limits during SSR without forwarding account cookies.
+const requestEvent = useRequestEvent();
+const fetchOptions = {
+  credentials: 'omit' as const, retry: 0, timeout: 10000,
+  ...(import.meta.server ? { context: { _platform: {
+    publicShareRemoteAddress: requestEvent?.node.req.socket.remoteAddress,
+    publicShareForwardedAddress: useRequestHeader('x-real-ip'),
+  } } } : {}),
+};
+const { data: archive, error, status } = await useAsyncData(
+  `shared-archive:${props.token}`,
+  () => /^[A-Za-z0-9_-]{43}$/.test(props.token)
+    ? $fetch<SharedArchive>(`${base}api/shared/${props.token}`, fetchOptions)
+    : Promise.reject(new Error('Invalid share link')),
+);
+const loading = computed(() => status.value === 'pending');
+const coverFailed = ref(false);
 const duration=computed(()=>{const seconds=archive.value?.duration;if(!seconds)return 'Не указана';const h=Math.floor(seconds/3600),m=Math.floor(seconds%3600/60),s=String(seconds%60).padStart(2,'0');return h?`${h}:${String(m).padStart(2,'0')}:${s}`:`${m}:${s}`;});
 const expiry=computed(()=>archive.value?new Date(archive.value.expiresAt).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Moscow'}):'');
 useHead({title:'Скачивание архива · QWS',meta:[{name:'robots',content:'noindex, nofollow, noarchive'},{name:'referrer',content:'no-referrer'}]});
-onMounted(async()=>{
-  controller=new AbortController();
-  try{
-    if(!/^[A-Za-z0-9_-]{43}$/.test(props.token))throw Error();
-    archive.value=await api<SharedArchive>(`api/shared/${props.token}`,{signal:controller.signal});
-    if(archive.value.hasCover){try{const data=await api<Blob>(`api/shared/${props.token}/cover`,{responseType:'blob',signal:controller.signal});if(!controller.signal.aborted)cover.value=URL.createObjectURL(data);}catch{}}
-  }catch{error.value=true;}finally{loading.value=false;}
-});
-onBeforeUnmount(()=>{controller?.abort();if(cover.value)URL.revokeObjectURL(cover.value);});
 </script>
 <template>
   <main class="shared-page">
@@ -26,7 +31,7 @@ onBeforeUnmount(()=>{controller?.abort();if(cover.value)URL.revokeObjectURL(cove
       <AppIcon name="lock" /><h1 id="shared-error">Ссылка недоступна</h1><p class="section-note">Срок ссылки мог закончиться, доступ мог быть отозван или архив удалён.</p>
     </section>
     <section v-else class="panel shared-card" aria-labelledby="shared-title">
-      <div class="shared-art"><img v-if="cover" :src="cover" alt="Обложка" /><AppIcon v-else name="music" /></div>
+      <div class="shared-art"><img v-if="archive.hasCover && !coverFailed" :src="`${base}api/shared/${token}/cover`" alt="Обложка" width="480" height="480" fetchpriority="high" referrerpolicy="no-referrer" @error="coverFailed = true" /><AppIcon v-else name="music" /></div>
       <div class="shared-info">
         <p class="shared-eyebrow">С вами поделился {{ archive.sharedBy }}</p>
         <h1 id="shared-title">{{ archive.title }}</h1>

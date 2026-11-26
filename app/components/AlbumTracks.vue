@@ -42,8 +42,6 @@ async function load() {
 }
 function toggle() {
   open.value = !open.value;
-  clearInterval(timer);
-  if (open.value) { load(); timer = setInterval(load, 3000); }
 }
 async function retry(track: Track) {
   if (retrying.value) return;
@@ -63,8 +61,8 @@ async function retry(track: Track) {
     retrying.value = '';
   }
 }
-let timer: ReturnType<typeof setInterval> | undefined;
-onBeforeUnmount(() => { disposed = true; clearInterval(timer); });
+useVisiblePolling(load, 3000, () => open.value);
+onBeforeUnmount(() => { disposed = true; });
 watch(() => props.status, load);
 </script>
 

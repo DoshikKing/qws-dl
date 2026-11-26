@@ -1803,3 +1803,15 @@ a.item-title:hover {
 
 .heading-tools { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; max-width: 100%; }
 @media (max-width: 760px) { .page-heading { flex-wrap: wrap; gap: 16px; } .heading-tools { align-items: flex-start; } }
+
+/* Keep scroll gestures inside modal content/backdrops without locking the root. */
+.account-dialog:modal { overscroll-behavior: contain; }
+.account-dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }
+
+/* Validate after interaction; untouched required fields are not painted as errors. */
+:where(input, select, textarea):user-invalid,
+:where(input, select, textarea)[aria-invalid="true"] {
+  border-color: var(--danger);
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+}

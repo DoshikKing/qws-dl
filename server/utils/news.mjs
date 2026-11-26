@@ -1,6 +1,41 @@
 // Newest first. Every app update needs a new unique id and factual release notes.
 export const releases = [
   {
+    "id": "2026-11-26-modern-web",
+    "version": "1.4.0",
+    "date": "2026-11-26",
+    "title": "Обновление веб-интерфейса",
+    "summary": "Раздельная загрузка разделов, меньше фоновых запросов и раннее отображение публичных архивов.",
+    "sections": [
+      {
+        "title": "Интерфейс и загрузка",
+        "items": [
+          "Разделы приложения загружаются по мере открытия. Публичная страница архива получает сведения при серверном рендеринге; обложка загружается напрямую с высоким приоритетом.",
+          "Опросы очереди, архивов, раскрытых списков треков и новостей приостанавливаются в скрытой вкладке и возобновляются при возвращении. Периодические запросы одного опроса не накладываются друг на друга.",
+          "Раскрывающиеся панели используют нативную анимацию высоты, где она поддерживается, с прежним вариантом для остальных браузеров. Системная настройка уменьшения движения сохраняется.",
+          "Добавлены поисковые области, подсказки клавиатуры и выделение ошибок полей после взаимодействия. Цветовая схема объявляется до загрузки стилей; заголовок вкладки соответствует открытому разделу.",
+          "Модальные окна ограничивают передачу прокрутки фону в поддерживающих браузерах. В остальных сохраняются нативная блокировка фокуса и доступность диалога."
+        ]
+      }
+    ],
+    "english": {
+      "title": "Web interface modernization",
+      "summary": "Load sections on demand, reduce background requests and render shared archives earlier.",
+      "sections": [
+        {
+          "title": "Interface and loading",
+          "items": [
+            "Application sections load on demand. Public archive metadata is server-rendered and artwork loads directly with high priority.",
+            "Queue, archive, expanded-track and news polling pauses in hidden tabs and resumes on return. Periodic requests from the same poller run serially.",
+            "Disclosures use native intrinsic-size animation where supported, retaining the previous grid fallback and reduced-motion support.",
+            "Search landmarks, mobile keyboard hints and interaction-aware invalid-field styles improve forms. Color-scheme metadata is available before styles, and the browser title follows the active section.",
+            "Modal dialogs contain background scroll chaining in supporting browsers. Native modal focus containment and accessibility remain available elsewhere."
+          ]
+        }
+      ]
+    }
+  },
+  {
     id: '2026-11-25-single-track-selection', version: '1.3.1', date: '2026-11-25', title: 'Одиночный трек без подборки',
     summary: 'Одна выбранная песня скачивается обычным заданием. Подборка создаётся для нескольких треков.',
     sections: [{ title: 'Выбор треков', items: [

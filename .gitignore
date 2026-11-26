@@ -11,3 +11,6 @@ test-results/
 playwright-report/
 __pycache__/
 release/
+
+# Installed agent guidance is restored from skills-lock.json.
+.agents/skills/modern-web-guidance/

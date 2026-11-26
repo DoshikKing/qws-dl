@@ -12,3 +12,7 @@ playwright-report
 __pycache__
 
 release
+
+.agents
+skills-lock.json
+.mwgrc

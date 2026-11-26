@@ -46,7 +46,6 @@ const size = (bytes: number) =>
     : bytes < 1024 * 1024
       ? `${(bytes / 1024).toFixed(0)} КБ`
       : `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
-let timer: ReturnType<typeof setInterval>;
 let refreshing = false;
 async function refresh() {
   if (refreshing) return;
@@ -65,11 +64,7 @@ async function refresh() {
     refreshing = false;
   }
 }
-onMounted(() => {
-  refresh();
-  timer = setInterval(refresh, 3000);
-});
-onBeforeUnmount(() => clearInterval(timer));
+useVisiblePolling(refresh, 3000);
 async function confirmDelete(file: Archive) {
   selected.value = file;
   dialogError.value = "";
@@ -116,15 +111,16 @@ async function retry(file: Archive) {
         {{ management ? "Архивы" : "ZIP-архивы" }}
         <span class="item-count">{{ files.length }}</span>
       </h2>
-      <div class="search-control">
+      <search class="search-control" aria-label="Поиск архивов">
         <AppIcon name="search" /><input
           ref="searchInput"
           v-model="search"
           type="search"
           aria-label="Поиск архивов"
           placeholder="Поиск"
+          enterkeyhint="search"
         />
-      </div>
+      </search>
     </div>
     <p class="section-note">
       {{

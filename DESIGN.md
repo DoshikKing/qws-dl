@@ -144,3 +144,18 @@ its own quiet record mark, actual artwork, metadata, sharing username, expiry an
 one download action. It never mounts the private workspace or prompts for login.
 Use placeholders for unavailable artwork/duration, escaped text and no external
 images, fonts or scripts. Preserve keyboard focus around the sharing dialog.
+
+## Web platform implementation
+
+Apply [Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance)
+with the browser policy in AGENTS.md. Use native search landmarks and form
+constraints; indicate invalid fields after interaction with `:user-invalid`.
+Declare supported light/dark schemes in the document head. Poll serially while
+the page is visible, stopping closed track-panel polls and resuming on return.
+Load substantial private sections on demand. Public archive HTML contains only
+public metadata; prioritize its cover without lazy loading or a blob fetch chain.
+Keep fallback grid height transitions behind native intrinsic-size enhancement.
+Modal scroll containment is progressive enhancement (non-overflowing containers
+are not yet handled by Safari); do not lock root overflow or duplicate native
+focus trapping. Keep existing dialog opening animation and native immediate close
+until exit transitions can preserve top-layer/focus behavior across browsers.

@@ -31,3 +31,18 @@ publishes English descriptions, Russian Markdown, committed sources and checksum
 as GitHub Release assets after validation. Never move an existing version tag or
 replace a published release: fix errors in a new version. Always check the Release
 workflow result after pushing a new version; a source commit alone is not a release.
+
+## Modern Web Guidance
+
+For HTML, CSS and client-side JavaScript, read
+`.agents/skills/modern-web-guidance/SKILL.md` (or the global installation), then
+search/retrieve relevant guidance before editing. Restore the skill with
+`DISABLE_TELEMETRY=1 npx -y modern-web-guidance@latest install`; provenance is in
+`skills-lock.json`. Keep telemetry disabled and do not add the CLI to application
+dependencies. Apply alongside DESIGN.md, Taste and Unslop.
+
+Browser support: Baseline Widely Available for required functionality; newer
+features must progressively enhance a working fallback without new dependencies.
+Keep grid disclosure fallback, native dialog focus behavior and reduced motion.
+Do not opt into origin trials or volatile APIs. The guide does not justify
+backend rewrites or weaker account isolation, no-store headers or CSP.

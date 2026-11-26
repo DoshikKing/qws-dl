@@ -15,7 +15,6 @@ const controller = new AbortController();
 let openedVersion: string | undefined;
 let disposed = false;
 let dismissAfterLoad = false;
-let timer: ReturnType<typeof setInterval>;
 const date = (value: string) => new Date(`${value}T12:00:00Z`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 function readLocal() {
   try {
@@ -79,14 +78,12 @@ function focused() { if (document.visibilityState === 'visible') void refresh();
 function retry() { void refresh(true); }
 onMounted(() => {
   readLocal();
-  void refresh();
-  timer = setInterval(refresh, 60000);
   window.addEventListener('storage', storageChanged);
   window.addEventListener('focus', focused);
 });
+useVisiblePolling(refresh, 60000);
 onBeforeUnmount(() => {
   disposed = true;
-  clearInterval(timer);
   controller.abort();
   window.removeEventListener('storage', storageChanged);
   window.removeEventListener('focus', focused);

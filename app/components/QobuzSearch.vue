@@ -201,12 +201,15 @@ async function addSelected() {
       :aria-labelledby="`catalog-tab-${activeType}`"
       :aria-busy="searching"
     >
+      <search :aria-label="prompts[activeType]">
       <form class="catalog-search-form" @submit.prevent="search()">
         <div class="field">
           <label for="catalog-query">{{ prompts[activeType] }}</label>
           <div class="input-with-icon">
             <AppIcon name="search" /><input
               id="catalog-query"
+              name="q"
+              enterkeyhint="search"
               v-model="query"
               type="search"
               :placeholder="prompts[activeType]"
@@ -227,6 +230,7 @@ async function addSelected() {
           />{{ searching ? "Поиск…" : "Найти" }}
         </button>
       </form>
+      </search>
       <p v-if="activeType === 'artists'" class="field-note catalog-artist-note">Выбор исполнителя добавит в очередь всю его доступную дискографию.</p>
       <p v-if="state.error" class="form-error search-message" role="alert">
         {{ state.error }}

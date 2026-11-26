@@ -32,6 +32,7 @@ async function submit() {
   failure.value = "";
   if (mode.value === "register" && password.value !== confirmation.value) {
     failure.value = "Пароли не совпадают.";
+    form.value?.querySelector<HTMLInputElement>("#account-confirm")?.focus();
     return;
   }
   busy.value = true;
@@ -73,6 +74,7 @@ async function submit() {
         ref="form"
         class="invite-form"
         aria-label="Приглашение"
+        method="post"
         @submit.prevent="submit"
       >
         <div class="auth-intro"><h1>Ваша музыкальная библиотека</h1><p>Введите код приглашения, чтобы создать аккаунт</p></div>
@@ -84,6 +86,9 @@ async function submit() {
           <AppIcon name="key" />
           <input
             id="invitation-code"
+            name="inviteCode"
+            enterkeyhint="go"
+            autocorrect="off"
             v-model="code"
             aria-label="Код приглашения"
             :aria-invalid="Boolean(failure)"
@@ -123,6 +128,7 @@ async function submit() {
         ref="form"
         class="auth-card panel"
         :aria-label="mode === 'login' ? 'Вход' : 'Регистрация'"
+        method="post"
         @submit.prevent="submit"
       >
         <h1>{{ mode === "login" ? "Вход" : "Регистрация" }}</h1>
@@ -133,6 +139,8 @@ async function submit() {
             v-model="username"
             name="username"
             autocomplete="username"
+            autocorrect="off"
+            enterkeyhint="next"
             autocapitalize="none"
             spellcheck="false"
             minlength="3"
@@ -174,6 +182,9 @@ async function submit() {
           <label for="account-confirm">Повторите пароль</label
           ><input
             id="account-confirm"
+            :aria-invalid="failure === 'Пароли не совпадают.'"
+            :aria-describedby="failure === 'Пароли не совпадают.' ? 'auth-error' : undefined"
+            @input="failure = ''"
             v-model="confirmation"
             name="confirm"
             type="password"

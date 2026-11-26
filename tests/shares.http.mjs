@@ -14,7 +14,7 @@ for(const basePath of ['/','/dl/'])test(`shares HTTP ${basePath}: capabilities i
  const origin=`http://127.0.0.1:${port}${basePath.replace(/\/$/,'')}`;
  const request=(path,cookie='',method='GET',body,extra={})=>fetch(origin+path,{method,headers:{cookie,'content-type':'application/json',...extra},body:body===undefined?undefined:JSON.stringify(body)});
  let server;
- const start=async()=>{server=spawn(process.execPath,['.output/server/index.mjs'],{env:{...process.env,HOST:'127.0.0.1',PORT:String(port),NUXT_APP_BASE_URL:basePath,DATA_DIR:data,DOWNLOAD_DIR:downloads,ADMIN_USERNAME:'admin',ADMIN_PASSWORD:'fixture-admin-password',MIN_FREE_BYTES:'0'},stdio:'ignore'});for(let i=0;i<150;i++){try{if((await request('/api/health')).ok)return;}catch{}await new Promise(done=>setTimeout(done,50));}throw Error('Fixture did not start');};
+ const start=async()=>{server=spawn(process.execPath,['.output/server/index.mjs'],{env:{...process.env,HOST:'127.0.0.1',PORT:String(port),NUXT_APP_BASE_URL:basePath,DATA_DIR:data,DOWNLOAD_DIR:downloads,ADMIN_USERNAME:'admin',ADMIN_PASSWORD:'fixture-admin-password',MIN_FREE_BYTES:'0',TRUST_PROXY:'false'},stdio:'ignore'});for(let i=0;i<150;i++){try{if((await request('/api/health')).ok)return;}catch{}await new Promise(done=>setTimeout(done,50));}throw Error('Fixture did not start');};
  const stop=async()=>{if(!server||server.exitCode!==null)return;const closed=once(server,'close');server.kill('SIGTERM');const timer=setTimeout(()=>server.kill('SIGKILL'),5000);await closed;clearTimeout(timer);};
  try{
   await start();const login=await request('/api/login','','POST',{username:'admin',password:'fixture-admin-password'});const admin=login.headers.get('set-cookie').split(';')[0];const profile=await(await request('/api/account',admin)).json();
@@ -44,7 +44,18 @@ with zipfile.ZipFile(sys.argv[1],'w',compression=zipfile.ZIP_STORED) as z:
   for(const body of [{hours:0},{hours:25},{hours:1,path:'../private'},{hours:1,jobId:jobs[3].id}])assert.equal((await request(endpoint(0),alice.cookie,'POST',body)).status,400);
   assert.equal((await request(endpoint(0),alice.cookie,'POST',{hours:1},{origin:'https://evil.example'})).status,403);
   const link=await make(),other=await make(3,bob.cookie);
-  const page=await request('/'+link.path);assert.equal(page.status,200);assert.equal(page.headers.get('set-cookie'),null);assert.match(page.headers.get('cache-control'),/no-store/);assert.equal(page.headers.get('referrer-policy'),'no-referrer');assert.match(page.headers.get('content-security-policy'),/object-src 'none'/);assert.ok(!(await page.text()).includes('Код приглашения'));
+  const page=await request('/'+link.path);assert.equal(page.status,200);assert.equal(page.headers.get('set-cookie'),null);assert.match(page.headers.get('cache-control'),/no-store/);assert.equal(page.headers.get('referrer-policy'),'no-referrer');assert.match(page.headers.get('content-security-policy'),/object-src 'none'/);const html=await page.text();
+  assert.ok(!html.includes('Код приглашения'));
+  assert.match(html, /<h1 id="shared-title"[^>]*>&lt;img src=x onerror=alert\(1\)&gt;<\/h1>/, 'public metadata is escaped and present before hydration');
+  assert.match(html, /<img[^>]+fetchpriority="high"/, 'artwork is discoverable in SSR HTML');
+  assert.ok(!html.includes('rel="prefetch"'), 'public pages do not speculatively fetch private workspace chunks');
+  assert.ok(!html.includes('blob:' + 'http'), 'artwork does not wait for a client-side blob chain');
+  for(const secret of [alice.id,bob.id,profile.inviteCode,alice.cookie.split('=')[1]])assert.ok(!html.includes(secret));
+  const signedInPage=await request('/'+link.path,alice.cookie);
+  const signedInHtml=await signedInPage.text();
+  assert.match(signedInHtml, /id="shared-title"/);
+  assert.ok(!signedInHtml.includes(profile.inviteCode));
+  assert.equal(signedInPage.headers.get('set-cookie'),null);
   const metadataResponse=await request(link.api);assert.equal(metadataResponse.status,200);assert.equal(metadataResponse.headers.get('set-cookie'),null);const metadata=await metadataResponse.json();
   assert.deepEqual(Object.keys(metadata).sort(),['title','artist','duration','tracks','size','sharedBy','expiresAt','hasCover'].sort());assert.equal(metadata.sharedBy,'alice');assert.equal(metadata.artist,'Fixture artist');assert.equal(metadata.duration,2);assert.equal(metadata.tracks,1);assert.equal(metadata.hasCover,true);
   const image=await request(link.api+'/cover');assert.equal(image.status,200);assert.equal(image.headers.get('content-type'),'image/jpeg');assert.equal(Buffer.from(await image.arrayBuffer()).subarray(0,3).toString('hex'),'ffd8ff');
@@ -79,5 +90,9 @@ with zipfile.ZipFile(sys.argv[1],'w',compression=zipfile.ZIP_STORED) as z:
   let complete=false;try{while(!(await reader.read()).done){}complete=true;}catch{}assert.equal(complete,false,'revocation interrupts a transfer before the full ZIP arrives');
   const disabled=await make();assert.equal((await request('/api/admin/users/'+alice.id,admin,'PATCH',{action:'disable'})).status,200);assert.equal((await request(disabled.api)).status,404);assert.equal((await request(other.api)).status,200);
   assert.equal((await request('/api/admin/users/'+bob.id,admin,'PATCH',{action:'delete'})).status,200);assert.equal((await request(other.api)).status,404);
+  // SSR and direct public APIs must share the real peer's request budget. A
+  // browser-supplied forwarding header must not create a new identity.
+  for(let i=0;i<121;i++)await request('/s/'+'x'.repeat(43),'','GET',undefined,{'x-real-ip':`192.0.2.${i+1}`});
+  assert.equal((await request(other.api)).status,429,'SSR consumes the original peer budget, not a shared unknown bucket');
  }finally{await stop();await rm(base,{recursive:true,force:true});}
 });

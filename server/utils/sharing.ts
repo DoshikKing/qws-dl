@@ -34,8 +34,11 @@ export async function ownArchive(event: H3Event) {
 }
 export async function publicArchive(event: H3Event) {
   const queue=getQueue(),token=getRouterParam(event,'token')||'';
-  const forwarded=getHeader(event,'x-real-ip')||'';
-  const client=process.env.TRUST_PROXY==='true' && isIP(forwarded)?forwarded:event.node.req.socket.remoteAddress||'unknown';
+  // Nitro's internal SSR fetch has no peer socket. Context is server-only and
+  // carries the original address, never a browser-provided identity or cookie.
+  const forwarded=event.context.publicShareForwardedAddress||getHeader(event,'x-real-ip')||'';
+  const remote=event.context.publicShareRemoteAddress||event.node.req.socket.remoteAddress;
+  const client=process.env.TRUST_PROXY==='true' && isIP(forwarded)?forwarded:remote||'unknown';
   if(!takeLimit(`share-read:${client}`,120))throw createError({statusCode:429,statusMessage:'Повторите позже.'});
   if(getRequestURL(event).search)throw unavailable();
   let row=queue.shares.resolve(token);

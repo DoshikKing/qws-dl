@@ -338,9 +338,7 @@ export class DownloadQueue {
 
   pump() {
     if (this.active || this.stopping) return;
-    const job = [...this.jobs]
-      .reverse()
-      .find((item) => ["queued", "archiving"].includes(item.status));
+    const job = this.jobs.findLast((item) => ["queued", "archiving"].includes(item.status));
     if (!job) return;
     if (job.status === "archiving") {
       this.finishArchive(job);

@@ -65,7 +65,7 @@ with Path(os.environ['DOWNLOAD_DIR'], 'fixture.flac').open('wb') as out:
     const job = await add('123');
     assert.equal(job.downloadLimit, 2);assert.equal(job.lyrics, true);assert.equal(job.quality, 'lossless');assert.equal(job.retentionMode, 'downloads');
     const path = `/api/jobs/${job.id}/archive`;
-    await until(async () => (await jobs()).find(item => item.id === job.id)?.hasFiles);
+    await until(async () => { const current=(await jobs()).find(item => item.id === job.id); assert.notEqual(current?.status,'failed',current?.log); return current?.hasFiles; });
     const head = await request(path, alice, 'HEAD');assert.equal(head.status, 200);assert.ok(Number(head.headers.get('content-length')) > 1024);assert.equal((await head.arrayBuffer()).byteLength, 0);assert.equal(head.headers.get('content-type'), 'application/zip');
     assert.equal((await request(path, bob, 'HEAD')).status, 404);
     assert.equal((await request(path, bob)).status, 404);

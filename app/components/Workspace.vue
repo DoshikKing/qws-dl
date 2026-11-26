@@ -269,9 +269,7 @@ async function retryArchive(job: Job) {
     busy.value = false;
   }
 }
-let timer: ReturnType<typeof setInterval>;
-let refreshing = false;
-onMounted(async () => {
+onMounted(() => {
   const params = new URLSearchParams(window.location.search);
   const outcome = params.get('qobuz');
   if (outcome === 'connected' || outcome === 'failed') {
@@ -280,18 +278,9 @@ onMounted(async () => {
     params.delete('qobuz');
     window.history.replaceState(null, '', window.location.pathname + (params.size ? '?' + params : '') + window.location.hash);
   }
-  await refresh();
-  timer = setInterval(async () => {
-    if (!authenticated.value || refreshing) return;
-    refreshing = true;
-    try {
-      await refresh();
-    } finally {
-      refreshing = false;
-    }
-  }, 3000);
 });
-onBeforeUnmount(() => clearInterval(timer));
+useVisiblePolling(refresh, 3000, () => checking.value || authenticated.value);
+useHead({ title: () => authenticated.value ? `${pageTitle.value} · QWS` : 'Вход · QWS' });
 </script>
 
 <template>
@@ -441,6 +430,11 @@ onBeforeUnmount(() => clearInterval(timer));
                             id="url"
                             v-model="url"
                             type="url"
+                            name="url"
+                            enterkeyhint="go"
+                            autocapitalize="none"
+                            autocorrect="off"
+                            spellcheck="false"
                             placeholder="https://play.qobuz.com/album/…"
                             required
                             maxlength="2048"
@@ -484,7 +478,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         {{ retentionMode === 'downloads' ? `ZIP удалится после ${downloadLimit} скачиваний или через ${status?.downloadRetentionHours || 168} ч — что наступит раньше.` : `ZIP удалится через ${retentionHours} ч после завершения.` }}
                       </p>
                     </form>
-                    <QobuzSearch :download-retention-hours="status?.downloadRetentionHours || 168"
+                    <LazyQobuzSearch :download-retention-hours="status?.downloadRetentionHours || 168"
                       v-else
                       v-model:lyrics="lyrics"
                       v-model:quality="quality"
@@ -654,29 +648,29 @@ onBeforeUnmount(() => clearInterval(timer));
                   </section>
                 </template>
 
-                <LyricsUpload
+                <LazyLyricsUpload
                   v-else-if="tab === 'lyrics'"
                   :jobs="jobs.filter(job => job.kind === 'lyrics-upload')"
                   :download-retention-hours="status?.downloadRetentionHours || 168" :default-mode="status?.retentionMode || 'time'" :default-downloads="status?.downloadLimit || 1" :default-hours="Math.min(status?.retentionHours || 1, 5)"
                   @changed="refresh"
                 />
-                <ArchiveLibrary
+                <LazyArchiveLibrary
                   v-else-if="tab === 'library'"
                   @changed="refresh"
                 />
-                <ArchiveLibrary
+                <LazyArchiveLibrary
                   v-else-if="tab === 'storage' && account?.role === 'admin'"
                   management
                   @changed="refresh"
                 />
 
                 <template v-else-if="tab === 'users' && account?.role === 'admin'">
-                  <UserManagement />
-                  <UsageStatistics management />
+                  <LazyUserManagement />
+                  <LazyUsageStatistics management />
                 </template>
                 <template v-else>
                   <AccountSettings v-if="account" :account="account" />
-                  <UsageStatistics v-if="account" :key="account.id" />
+                  <LazyUsageStatistics v-if="account" :key="account.id" />
                   <template v-if="account?.role === 'admin'">
                     <section class="section" aria-labelledby="qobuz-settings">
                       <div class="section-heading">
@@ -715,7 +709,7 @@ onBeforeUnmount(() => clearInterval(timer));
                         Установка: <code>npm run setup:orpheus</code>.
                       </p>
                     </section>
-                    <AppDefaults @saved="defaultsSaved" />
+                    <LazyAppDefaults @saved="defaultsSaved" />
                   </template>
                 </template>
               </div>

@@ -25,4 +25,15 @@ watch(() => props.open, (value) => { if (value) rendered.value = true; });
   transition-delay: 0s;
 }
 .disclosure-inner { min-height: 0; overflow: hidden; }
+/* Native intrinsic sizing where supported; the grid above remains the fallback. */
+@supports (interpolate-size: allow-keywords) {
+  .disclosure-panel {
+    display: block;
+    interpolate-size: allow-keywords;
+    block-size: 0;
+    overflow: clip;
+    transition: block-size 240ms ease, opacity 200ms ease, visibility 0s 240ms;
+  }
+  .disclosure-panel.is-open { block-size: auto; transition-delay: 0s; }
+}
 </style>

@@ -80,14 +80,15 @@ async function manage(user: ManagedUser, value: string) {
       <h2 id="users-heading">
         Аккаунты <span class="item-count">{{ users.length }}</span>
       </h2>
-      <div class="search-control">
+      <search class="search-control" aria-label="Поиск пользователей">
         <AppIcon name="search" /><input
           v-model="search"
           type="search"
           aria-label="Поиск пользователей"
           placeholder="Поиск"
+          enterkeyhint="search"
         />
-      </div>
+      </search>
     </div>
     <p v-if="error && !dialog?.open" class="notice notice-error" role="alert">
       {{ error }}
@@ -169,7 +170,7 @@ async function manage(user: ManagedUser, value: string) {
     @cancel="password = ''"
     @close="password = ''"
   >
-    <form v-if="selected" @submit.prevent="manage(selected, action)">
+    <form v-if="selected" method="post" @submit.prevent="manage(selected, action)">
       <h2 id="dialog-title">
         {{
           action === "delete"
@@ -185,6 +186,8 @@ async function manage(user: ManagedUser, value: string) {
         <label for="reset-password">Новый пароль</label
         ><input
           id="reset-password"
+          name="newPassword"
+          aria-describedby="reset-password-hint"
           v-model="password"
           type="password"
           autocomplete="new-password"
@@ -193,7 +196,7 @@ async function manage(user: ManagedUser, value: string) {
           maxlength="256"
           :disabled="busy"
         />
-        <p class="field-note">
+        <p id="reset-password-hint" class="field-note">
           От 10 до 256 символов. Сеансы пользователя завершатся.
         </p>
       </div>
