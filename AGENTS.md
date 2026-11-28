@@ -46,3 +46,27 @@ features must progressively enhance a working fallback without new dependencies.
 Keep grid disclosure fallback, native dialog focus behavior and reduced motion.
 Do not opt into origin trials or volatile APIs. The guide does not justify
 backend rewrites or weaker account isolation, no-store headers or CSP.
+
+## Delegated development graph
+
+For repository development, use [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md) and
+`.agents/skills/project-orchestration/SKILL.md`. The primary agent coordinates as
+PM and delegates implementation to role-specific subagents, with independent leads
+validating analysis, development, QA, security, release material and integration.
+PM may implement an explicitly marked small task only with another actor's review.
+Any failed gate/check, expired assignment or stale candidate returns to ANALYSIS;
+three unsuccessful cycles block delivery. Never override FAIL to publish.
+
+Use `scripts/agent-flow.mjs` to record tasks, assignments, evidence and decisions.
+Read the documented CLI interface rather than inventing commands. The CLI does not
+launch LLMs: PM uses the available native collaboration tools and must interrupt
+cancelled agents. New `.codex/agents/*.toml` profiles are discovered by compatible
+new Codex sessions; in existing Work sessions explicitly pass their instructions.
+Keep PM, workers and leads within the seven-context limit. Role instructions and
+actor IDs do not create separate sandbox permissions or authenticated identities.
+
+All tracked edits, including release notes, finish before candidate freeze. Later
+gates inspect the same staged tree/base and hash-verified evidence. Runtime state
+belongs in ignored `.agent-workflows/`, never in Git, the release or Docker image.
+Pure development-tooling changes do not bump the app version or show app news;
+validate them with the separate Agent workflow CI even when Release skips a version.

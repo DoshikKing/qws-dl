@@ -14,3 +14,6 @@ release/
 
 # Installed agent guidance is restored from skills-lock.json.
 .agents/skills/modern-web-guidance/
+
+# Private agent task ledgers and evidence; never package or commit runtime state.
+.agent-workflows/

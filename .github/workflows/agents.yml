@@ -1,0 +1,46 @@
+name: Agent workflow
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: agents-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Test the task graph independently of the application release
+        run: node --test tests/agent-flow.test.mjs
+      - name: Validate native Codex role profiles
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import tomllib
+          expected = {'project_manager', 'analyst', 'analysis_lead', 'developer_tester',
+                      'development_lead', 'qa', 'qa_lead', 'security', 'security_lead',
+                      'patchnotes_author', 'patchnotes_reviewer', 'release_lead', 'integrator', 'integration_lead'}
+          files = list(Path('.codex/agents').glob('*.toml'))
+          assert {p.stem for p in files} == expected
+          for path in files:
+              profile = tomllib.loads(path.read_text())
+              assert set(profile) == {'name', 'description', 'developer_instructions'}, path
+              assert profile['name'] == path.stem, path
+              assert all(isinstance(value, str) and value.strip() for value in profile.values()), path
+          agents = tomllib.loads(Path('.codex/config.toml').read_text())['agents']
+          assert agents == {'enabled': True, 'max_concurrent_threads_per_session': 6}
+          print(f'Validated {len(files)} role profiles; six subagents plus PM.')
+          PY

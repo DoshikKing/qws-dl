@@ -1,0 +1,4 @@
+# Six subagents plus the primary project manager. Roles inherit the session model.
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 6

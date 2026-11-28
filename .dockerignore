@@ -16,3 +16,9 @@ release
 .agents
 skills-lock.json
 .mwgrc
+
+# Development orchestration is not part of the production application.
+.codex
+.agent-workflows
+AGENT_WORKFLOW.md
+scripts/agent-flow.mjs
